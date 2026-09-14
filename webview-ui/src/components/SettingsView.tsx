@@ -78,7 +78,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">MSGRAM Service URL</label>
+                    <label className="fl" htmlFor="inp-serviceurl">MSGRAM Service URL</label>
                     <div className="fd">URL base da API MSGRAM (ex: https://api.msgram.io)</div>
                     <input
                         className="fi"
@@ -91,7 +91,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">MSGRAM Service Token</label>
+                    <label className="fl" htmlFor="inp-msgram-token">MSGRAM Service Token</label>
                     <div className="fd">Token de autenticação da API MSGRAM (msgramServiceToken)</div>
                     <input
                         className="fi"
@@ -104,7 +104,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">GitHub Token</label>
+                    <label className="fl" htmlFor="inp-github-token">GitHub Token</label>
                     <div className="fd">Token usado pela action para acessar a API do GitHub (githubToken)</div>
                     <input
                         className="fi"
@@ -117,7 +117,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">Sonar Project Key</label>
+                    <label className="fl" htmlFor="inp-sonar-key">Sonar Project Key</label>
                     <div className="fd">
                         Chave do projeto no SonarQube (opcional, necessária se "Collect Sonarqube Metrics" estiver
                         ativo)
@@ -133,7 +133,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">Product Name</label>
+                    <label className="fl" htmlFor="inp-product">Product Name</label>
                     <div className="fd">Nome do produto cadastrado no MSGRAM 1 (productName)</div>
                     <input
                         className="fi"
@@ -146,7 +146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="fg">
-                    <label className="fl">Workflow Name</label>
+                    <label className="fl" htmlFor="inp-workflowname">Workflow Name</label>
                     <div className="fd">
                         Nome do workflow que realiza a build da release (workflowName), usado no "on: workflow_run"
                     </div>

@@ -32,7 +32,7 @@ export const GrafanaView: React.FC<GrafanaViewProps> = ({
         <div>
           <div className="view-title">
             <i className="ti ti-chart-area" style={{ color: '#2B4D6F', fontSize: 16 }} />
-            Grafana Dashboards
+            <span>Grafana Dashboards</span>
           </div>
           <div className="view-sub">
             {iframeUrl
@@ -83,22 +83,30 @@ export const GrafanaView: React.FC<GrafanaViewProps> = ({
       {showList && hasContext && dashboards.length > 0 && (
         <div id="grafana-dashboard-list">
           {dashboards.map((d) => (
-            <div
+            <button
               key={d.uid}
+              type="button"
               className="grafana-card"
               onClick={() => onSelectDashboard(d.uid)}
             >
-              <i className="ti ti-chart-bar grafana-card-icon" />
-              <div className="grafana-card-info">
-                <div className="grafana-card-title">{d.title}</div>
+              <i
+                className="ti ti-chart-bar grafana-card-icon"
+                aria-hidden="true"
+              />
+              <span className="grafana-card-info">
+                <span className="grafana-card-title">{d.title}</span>
                 {d.has_repo_selector && (
-                  <div className="grafana-card-sub">
-                    <i className="ti ti-git-branch" /> filtrado por repositório
-                  </div>
+                  <span className="grafana-card-sub">
+                    <i className="ti ti-git-branch" aria-hidden="true" />
+                    {' '}filtrado por repositório
+                  </span>
                 )}
-              </div>
-              <i className="ti ti-chevron-right grafana-card-arrow" />
-            </div>
+              </span>
+              <i
+                className="ti ti-chevron-right grafana-card-arrow"
+                aria-hidden="true"
+              />
+            </button>
           ))}
         </div>
       )}

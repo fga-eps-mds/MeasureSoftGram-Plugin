@@ -371,7 +371,6 @@ body {
 
 .commit-warn {
     background: #FFFBF0;
-    border-left: 3px solid #DF8E16;
     border-radius: 0 4px 4px 0;
     padding: 8px 10px;
     margin-bottom: 10px;
@@ -647,15 +646,22 @@ body {
     gap: 8px;
     box-shadow: 0 1px 2px rgba(43,77,111,0.05);
     transition: border-color .15s, box-shadow .15s;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
 }
 .grafana-card:hover {
     border-color: #2B4D6F;
     box-shadow: 0 1px 6px rgba(43,77,111,0.14);
 }
+.grafana-card:focus-visible {
+    outline: 2px solid #2B4D6F;
+    outline-offset: 2px;
+}
 .grafana-card-icon  { font-size: 16px; color: #5F7EA3; flex-shrink: 0; }
-.grafana-card-info  { flex: 1; min-width: 0; }
-.grafana-card-title { font-size: 11px; color: #333; font-family: sans-serif; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.grafana-card-sub   { font-size: 10px; color: #888; margin-top: 2px; font-family: sans-serif; display: flex; align-items: center; gap: 3px; }
+.grafana-card-info  { flex: 1; min-width: 0; display: block; }
+.grafana-card-title { font-size: 11px; color: #333; font-family: sans-serif; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.grafana-card-sub   { font-size: 10px; color: #888; margin-top: 2px; font-family: sans-serif; display: block; align-items: center; gap: 3px; }
 .grafana-card-arrow { font-size: 14px; color: #C5C8CC; flex-shrink: 0; }
 
 .grafana-iframe {

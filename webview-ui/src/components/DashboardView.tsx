@@ -49,7 +49,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div>
                     <div className="view-title">
                         <i className="ti ti-chart-radar" style={{color: '#2B4D6F', fontSize: 16}}/>
-                        MeasureSoftGram
+                        <span>MeasureSoftGram</span>
                     </div>
                     <div className="view-sub">
                         {productLabel} · última análise: agora mesmo
