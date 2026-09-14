@@ -10,6 +10,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,5 +50,5 @@ jobs:
         uses: AButler/upload-release-assets@v2.0
         with:
           files: 'analytics-raw-data/*'
-          repo-token: ${{ secrets.TOKEN_GITHUB }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           release-tag: ${{ github.ref_name }}

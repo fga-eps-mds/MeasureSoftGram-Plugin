@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useRef} from 'react';
+import DOMPurify from 'dompurify';
 import {colorizeYaml, escHtml} from '../../utils/helpers.ts';
 
 interface YamlEditorProps {
@@ -12,7 +13,15 @@ export const YamlEditor: React.FC<YamlEditorProps> = ({value, onChange}) => {
 
     const syncPreview = useCallback((raw: string) => {
         if (preRef.current) {
-            preRef.current.innerHTML = colorizeYaml(escHtml(raw));
+            preRef.current.innerHTML = DOMPurify.sanitize(
+                colorizeYaml(escHtml(raw)),
+                {
+                    ALLOWED_TAGS: ['span'],
+                    ALLOWED_ATTR: ['class'],
+                    ALLOW_DATA_ATTR: false,
+                    ALLOW_ARIA_ATTR: false,
+                },
+            );
         }
     }, []);
 
