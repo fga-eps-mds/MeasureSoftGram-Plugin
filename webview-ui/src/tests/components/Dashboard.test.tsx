@@ -71,6 +71,37 @@ describe('DashboardView', () => {
     });
 
     describe('commit warning', () => {
+        it('não deve exibir aviso de commit quando a lista de características é vazia', () => {
+            const scoreData = { ...mockScoreData, characteristics: [] };
+            render(<DashboardView {...defaultProps} scoreData={scoreData} showCommitWarn={true} />);
+
+            expect(document.getElementById('commit-warn')).not.toBeInTheDocument();
+        });
+
+        it('deve exibir a única característica no aviso de commit', () => {
+            const scoreData = {
+                ...mockScoreData,
+                characteristics: [{ name: 'Reliability', value: 0.60, goal: 0.75 }],
+            };
+            render(<DashboardView {...defaultProps} scoreData={scoreData} showCommitWarn={true} />);
+
+            expect(document.getElementById('commit-warn')).toHaveTextContent('Reliability');
+        });
+
+        it('deve escolher pela menor diferença para a meta entre várias características', () => {
+            const scoreData = {
+                ...mockScoreData,
+                characteristics: [
+                    { name: 'Maintainability', value: 0.40, goal: 0.45 },
+                    { name: 'Reliability', value: 0.60, goal: 0.90 },
+                    { name: 'Performance', value: 0.80, goal: 0.70 },
+                ],
+            };
+            render(<DashboardView {...defaultProps} scoreData={scoreData} showCommitWarn={true} />);
+
+            expect(document.getElementById('commit-warn')).toHaveTextContent('Reliability');
+        });
+
         it('deve exibir aviso de commit com a pior característica', () => {
             render(<DashboardView {...defaultProps} showCommitWarn={true} />);
 

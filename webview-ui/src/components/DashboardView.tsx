@@ -26,8 +26,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         : 0.7;
 
     const worstChar = scoreData?.characteristics.length
-        ? scoreData.characteristics.reduce((worst, c) =>
-            c.value - c.goal < worst.value - worst.goal ? c : worst,
+        ? scoreData.characteristics.reduce(
+            (worst, c) =>
+                c.value - c.goal < worst.value - worst.goal ? c : worst,
+            scoreData.characteristics[0],
         )
         : undefined;
 
