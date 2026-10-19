@@ -61,9 +61,14 @@ suite('Fluxos reais — sidebar em VS Code real', () => {
     suiteSetup(async function () {
         this.timeout(60_000);
         api = await getApi();
+        // A interface manda request_score ao montar (App.tsx). Se essa resposta
+        // chegar no meio de um teste, polui as mensagens coletadas por ele; então
+        // espera ela terminar antes de seguir. Assina antes do focus para não perdê-la.
+        const mount = collect(api, ['not_configured', 'score_loaded', 'score_error'], 30_000);
         // Força o VS Code a resolver a view (cria o webview real).
         await vscode.commands.executeCommand('msgram.sidebarView.focus');
         await waitFor(() => api.sidebar.hasWebview, 20_000, 'sidebar resolver o webview');
+        await mount.done;
 
         // Estado limpo: o user-data-dir é reaproveitado entre execuções.
         const c1 = collect(api, ['not_configured', 'score_loaded', 'score_error'], 20_000);
