@@ -2,7 +2,7 @@
   "name": "measuresoftgram",
   "displayName": "MeasureSoftGram",
   "description": "Análise multidimensional da qualidade de software, direto no VS Code.",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "publisher": "MeasureSoftGram",
   "license": "AGPL-3.0",
   "homepage": "https://fga-eps-mds.github.io/MeasureSoftGram-Docs/",
