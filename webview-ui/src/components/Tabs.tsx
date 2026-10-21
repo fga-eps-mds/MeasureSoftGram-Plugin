@@ -8,10 +8,10 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-    {id: 'dashboard', label: 'Painel',  icon: 'ti-chart-radar'},
-    {id: 'grafana',   label: 'Grafana', icon: 'ti-chart-area'},
-    {id: 'settings',  label: 'Config',  icon: 'ti-settings'},
-    {id: 'action',    label: 'Action',  icon: 'ti-file-code'},
+    {id: 'dashboard', label: 'Painel',  icon: 'codicon-dashboard'},
+    {id: 'grafana',   label: 'Grafana', icon: 'codicon-graph-line'},
+    {id: 'settings',  label: 'Config',  icon: 'codicon-settings-gear'},
+    {id: 'action',    label: 'Action',  icon: 'codicon-file-code'},
 ];
 
 interface TabsProps {
@@ -28,7 +28,7 @@ export const Tabs: React.FC<TabsProps> = ({active, onSelect}) => (
                 className={`tab${active === t.id ? ' on' : ''}`}
                 onClick={() => onSelect(t.id)}
             >
-                <i className={`ti ${t.icon}`}/> {t.label}
+                <i className={`codicon ${t.icon}`}/> {t.label}
             </div>
         ))}
     </div>

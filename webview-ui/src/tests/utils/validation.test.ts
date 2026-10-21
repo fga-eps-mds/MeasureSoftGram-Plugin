@@ -4,8 +4,8 @@ import {getMissingSettings} from '../../utils/validation';
 describe('getMissingSettings', () => {
     it('deve retornar lista vazia quando todos os campos obrigatórios estão preenchidos', () => {
         const settings = {
-            githubToken: 'token123',
-            msgramServiceToken: 'msgram123',
+            hasGithubToken: true,
+            hasMsgramToken: true,
             productName: 'Measure',
             workflowName: 'Build',
         };
@@ -18,26 +18,26 @@ describe('getMissingSettings', () => {
 
     it('deve retornar o campo faltante quando apenas um está ausente', () => {
         const settings = {
-            msgramServiceToken: 'msgram123',
+            hasMsgramToken: true,
             productName: 'Measure',
             workflowName: 'Build',
         };
         const missing = getMissingSettings(settings);
         expect(missing).toHaveLength(1);
-        expect(missing[0].key).toBe('githubToken');
+        expect(missing[0].key).toBe('hasGithubToken');
         expect(missing[0].label).toBe('GitHub Token');
     });
 
     it('deve considerar campo com apenas espaços como ausente', () => {
         const settings = {
-            githubToken: '   ',
-            msgramServiceToken: 'msgram123',
-            productName: 'Measure',
+            hasGithubToken: true,
+            hasMsgramToken: true,
+            productName: '   ',
             workflowName: 'Build',
         };
         const missing = getMissingSettings(settings);
         expect(missing).toHaveLength(1);
-        expect(missing[0].key).toBe('githubToken');
+        expect(missing[0].key).toBe('productName');
     });
 
     it('deve retornar os labels corretos para cada campo obrigatório', () => {

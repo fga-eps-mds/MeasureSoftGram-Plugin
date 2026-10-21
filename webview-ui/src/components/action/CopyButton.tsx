@@ -11,17 +11,17 @@ export const CopyButton: React.FC<CopyButtonProps> = ({getValue}) => {
         navigator.clipboard?.writeText(getValue()).catch(() => {
         });
         if (!btnRef.current) return;
-        btnRef.current.innerHTML = '<i class="ti ti-check"></i> Copiado';
+        btnRef.current.innerHTML = '<i class="codicon codicon-check"></i> Copiado';
         setTimeout(() => {
             if (btnRef.current) {
-                btnRef.current.innerHTML = '<i class="ti ti-copy"></i> Copiar';
+                btnRef.current.innerHTML = '<i class="codicon codicon-copy"></i> Copiar';
             }
         }, 1500);
     };
 
     return (
         <button ref={btnRef} className="btn" onClick={handleCopy} style={{width: '100%', justifyContent: 'center'}}>
-            <i className="ti ti-copy"/> Copiar
+            <i className="codicon codicon-copy"/> Copiar
         </button>
     );
 };

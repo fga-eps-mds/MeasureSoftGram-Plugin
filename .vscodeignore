@@ -17,7 +17,7 @@ webview-ui/tsconfig*
 .eslintrc*
 tsconfig.json
 .mocharc*
-coverage/**
+**/coverage/**
 .github/**
 .idea/**
 .vscode-test.mjs
@@ -27,3 +27,8 @@ requirements.txt
 sonar-project.properties
 webview-ui/eslint.config.js
 webview-ui/index.html
+webview-ui/build/**/*.map
+specs/**
+.specify/**
+.claude/**
+diagnostico-*.md

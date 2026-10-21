@@ -33,11 +33,11 @@ describe('SaveButton', () => {
     it('deve exibir ícone de check no feedback quando savedFeedback é true', () => {
         render(<SaveButton onSave={onSave} savedFeedback={true}/>);
         const feedback = screen.getByText(/Salvo no seu perfil/i).closest('span');
-        expect(feedback?.querySelector('i')).toHaveClass('ti-check');
+        expect(feedback?.querySelector('i')).toHaveClass('codicon-check');
     });
 
     it('deve exibir ícone de floppy no botão', () => {
         render(<SaveButton onSave={onSave} savedFeedback={false}/>);
-        expect(screen.getByRole('button').querySelector('i')).toHaveClass('ti-device-floppy');
+        expect(screen.getByRole('button').querySelector('i')).toHaveClass('codicon-save');
     });
 });

@@ -2,12 +2,21 @@ import React from 'react';
 
 interface RunButtonProps {
     onRun: () => void;
+    onStop: () => void;
     running: boolean;
 }
 
-export const RunButton: React.FC<RunButtonProps> = ({onRun, running}) => (
-    <button className="btn" onClick={onRun} disabled={running} style={{width: '100%', justifyContent: 'center'}}>
-        <i className={`ti ${running ? 'ti-loader-2 run-anim' : 'ti-player-play'}`}/>
-        {running ? ' Executando...' : ' Executar'}
-    </button>
+/** "Executar" (desabilitado enquanto roda) e "Parar" (só enquanto roda). */
+export const RunButton: React.FC<RunButtonProps> = ({onRun, onStop, running}) => (
+    <div className="run-row">
+        <button className="btn run-btn" type="button" onClick={onRun} disabled={running}>
+            <i className={`codicon ${running ? 'codicon-loading codicon-modifier-spin run-anim' : 'codicon-play'}`} aria-hidden="true"/>
+            {running ? ' Executando...' : ' Executar'}
+        </button>
+        {running && (
+            <button className="btn btn-secondary stop-btn" type="button" onClick={onStop}>
+                <i className="codicon codicon-debug-stop" aria-hidden="true"/> Parar
+            </button>
+        )}
+    </div>
 );

@@ -1,0 +1,84 @@
+name: Release & Marketplace (.vsix)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+    steps:
+      # 1. Google Release Please analisa commits convencionais na main e gerencia o PR de release e a Tag oficial
+      - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
+        id: release
+        with:
+          release-type: node
+          target-branch: main
+
+      # 2. Quando o PR de release é mergeado na main, steps abaixo compilam e publicam os artefatos oficiais
+      - name: Checkout do código pós-release
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Instalar dependências da extensão
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci
+
+      - name: Instalar dependências da interface
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci
+        working-directory: webview-ui
+
+      - name: Lint e testes
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          npm run lint && npm run lint:webview
+          npm run test:unit
+          npm run test:run --prefix webview-ui
+
+      - name: Empacotar extensão VS Code (.vsix)
+        # vscode:prepublish gera a interface e compila a extensão
+        if: ${{ steps.release.outputs.release_created }}
+        run: npx --yes @vscode/vsce package --no-git-tag-version -o "measuresoftgram-${{ steps.release.outputs.version }}.vsix"
+
+      - name: Conferir conteúdo do pacote
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          unzip -l "measuresoftgram-${{ steps.release.outputs.version }}.vsix" > vsix-contents.txt
+          grep -q 'extension/webview-ui/build/assets/index.js' vsix-contents.txt || { echo "::error::interface não está no pacote"; exit 1; }
+          if grep -q 'coverage/' vsix-contents.txt; then echo "::error::relatório de cobertura dentro do pacote"; exit 1; fi
+
+      - name: Anexar .vsix à GitHub Release oficial
+        if: ${{ steps.release.outputs.release_created }}
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          tag_name: ${{ steps.release.outputs.tag_name }}
+          files: measuresoftgram-${{ steps.release.outputs.version }}.vsix
+
+      - name: Publicar no Visual Studio Marketplace
+        if: ${{ steps.release.outputs.release_created && env.VSCE_PAT != '' }}
+        run: |
+          echo "Publicando no VS Code Marketplace..."
+          npx --yes @vscode/vsce publish -p "$VSCE_PAT" --packagePath "measuresoftgram-${{ steps.release.outputs.version }}.vsix"
+
+      - name: Notificação de Marketplace ignorado (Sem segredo configurado)
+        if: ${{ steps.release.outputs.release_created && env.VSCE_PAT == '' }}
+        run: echo "::notice::Publicação no VS Code Marketplace ignorada (secret VSCE_PAT não configurado no repositório)."

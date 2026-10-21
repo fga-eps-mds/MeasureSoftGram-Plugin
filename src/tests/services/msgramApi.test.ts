@@ -6,9 +6,9 @@ import {
   fetchGrafanaDashboards,
   fetchRepositories,
   fetchScoreForRepo,
-  login,
   MsgramSettings,
 } from '../../services/msgramApi';
+import {HttpError} from '../../services/httpClient';
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse) => void;
 
@@ -35,96 +35,70 @@ const MOCK_REPOS = [
 ];
 const MOCK_TSQMI = {value: 0.9830292488408795};
 const MOCK_CHARS = [
-  {name: 'Reliability', latest: {value: 0.47}},
-  {name: 'Maintainability', latest: {value: 0.99}},
+  {key: 'reliability', name: 'Reliability', latest: {value: 0.47, created_at: '2026-10-01T00:00:00Z'}},
+  {key: 'maintainability', name: 'Maintainability', latest: {value: 0.99, created_at: '2026-10-01T00:00:00Z'}},
 ];
 
 function createFullMockServer(): Promise<{ server: http.Server; baseUrl: string }> {
   return mockServer((req, res) => {
     const url = req.url ?? '';
     if (url === '/api/v1/organizations/') {
-      return json(res, {count: 1, results: [MOCK_ORG]});
+      return json(res, {count: 1, next: null, results: [MOCK_ORG]});
     }
     if (url === `/api/v1/organizations/${MOCK_ORG.id}/products/`) {
-      return json(res, {count: 1, results: [MOCK_PRODUCT]});
+      return json(res, {count: 1, next: null, results: [MOCK_PRODUCT]});
     }
     if (url === `/api/v1/organizations/${MOCK_ORG.id}/products/${MOCK_PRODUCT.id}/repositories/`) {
-      return json(res, {count: MOCK_REPOS.length, results: MOCK_REPOS});
+      return json(res, {count: MOCK_REPOS.length, next: null, results: MOCK_REPOS});
+    }
+    if (url.endsWith('/current/goal/')) {
+      return json(res, {id: 1, data: {reliability: 70, maintainability: 70}});
     }
     if (url.includes('latest-values/tsqmi')) {
-      return json(res, url.includes('9999') ? {created_at: null} : MOCK_TSQMI);
+      return json(res, url.includes('9999') ? {value: null} : MOCK_TSQMI);
     }
     if (url.includes('latest-values/characteristics')) {
-      return json(res, {count: MOCK_CHARS.length, results: MOCK_CHARS});
+      return json(res, {count: MOCK_CHARS.length, next: null, results: MOCK_CHARS});
     }
     json(res, {detail: 'Not found.'}, 404);
   });
 }
 
-// ── login ─────────────────────────────────────────────────────────────────────
-
-suite('login', () => {
-  test('retorna token com credenciais válidas', async () => {
-    const {server, baseUrl} = await mockServer((req, res) => {
-      let body = '';
-      req.on('data', c => (body += c));
-      req.on('end', () => {
-        const {username, password} = JSON.parse(body);
-        username === 'admin' && password === 'admin'
-            ? json(res, {key: 'token-abc'})
-            : json(res, {non_field_errors: ['Credenciais inválidas.']}, 400);
-      });
-    });
-    try {
-      const token = await login(baseUrl, 'admin', 'admin');
-      assert.strictEqual(token, 'token-abc');
-    } finally {
-      server.close();
-    }
-  });
-
-  test('lança erro HTTP 400 com credenciais inválidas', async () => {
-    const {server, baseUrl} = await mockServer((req, res) => {
-      json(res, {non_field_errors: ['Credenciais inválidas.']}, 400);
-    });
-    try {
-      await assert.rejects(login(baseUrl, 'x', 'x'), /HTTP 400/);
-    } finally {
-      server.close();
-    }
-  });
-});
+const base = (baseUrl: string, extra: Partial<MsgramSettings> = {}): MsgramSettings =>
+    ({serviceUrl: baseUrl, token: 'tok', productName: 'MeasureSoftGram', ...extra});
 
 // ── fetchRepositories ─────────────────────────────────────────────────────────
 
 suite('fetchRepositories', () => {
-  test('retorna dados mockados quando serviceUrl está vazio', async () => {
-    const s: MsgramSettings = {serviceUrl: '', token: '', productName: 'P'};
-    const result = await fetchRepositories(s);
-    assert.strictEqual(result.orgPk, 0);
-    assert.ok(result.repos.length > 0);
+  test('sem token lança kind auth em vez de devolver dados de exemplo', async () => {
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {detail: 'nope'}, 401));
+    try {
+      await assert.rejects(
+          fetchRepositories(base(baseUrl, {token: ''})),
+          (e: unknown) => e instanceof HttpError && e.kind === 'auth',
+      );
+    } finally {
+      server.close();
+    }
   });
 
   test('retorna organização e produto corretos', async () => {
     const {server, baseUrl} = await createFullMockServer();
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'tok', productName: 'MeasureSoftGram'};
-      const result = await fetchRepositories(s);
+      const result = await fetchRepositories(base(baseUrl));
       assert.strictEqual(result.orgPk, MOCK_ORG.id);
       assert.strictEqual(result.productPk, MOCK_PRODUCT.id);
       assert.strictEqual(result.repos.length, MOCK_REPOS.length);
+      assert.deepStrictEqual(result.organizations, [MOCK_ORG]);
     } finally {
       server.close();
     }
   });
 
   test('lança erro quando nenhuma organização encontrada', async () => {
-    const {server, baseUrl} = await mockServer((req, res) => {
-      json(res, {count: 0, results: []});
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {count: 0, next: null, results: []}));
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'tok', productName: 'P'};
-      await assert.rejects(fetchRepositories(s), /Nenhuma organização encontrada/);
+      await assert.rejects(fetchRepositories(base(baseUrl)), /Nenhuma organização encontrada/);
     } finally {
       server.close();
     }
@@ -133,13 +107,12 @@ suite('fetchRepositories', () => {
   test('lança erro quando produto não encontrado', async () => {
     const {server, baseUrl} = await mockServer((req, res) => {
       if (req.url === '/api/v1/organizations/') {
-        return json(res, {count: 1, results: [MOCK_ORG]});
+        return json(res, {count: 1, next: null, results: [MOCK_ORG]});
       }
-      json(res, {count: 1, results: [{id: 99, name: 'OutroProduto'}]});
+      json(res, {count: 1, next: null, results: [{id: 99, name: 'OutroProduto'}]});
     });
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'tok', productName: 'MeasureSoftGram'};
-      await assert.rejects(fetchRepositories(s), /Produto "MeasureSoftGram" não encontrado/);
+      await assert.rejects(fetchRepositories(base(baseUrl)), /Produto "MeasureSoftGram" não encontrado/);
     } finally {
       server.close();
     }
@@ -149,20 +122,13 @@ suite('fetchRepositories', () => {
 // ── fetchScoreForRepo ─────────────────────────────────────────────────────────
 
 suite('fetchScoreForRepo', () => {
-  test('retorna dados mockados quando sem configuração', async () => {
-    const s: MsgramSettings = {serviceUrl: '', token: '', productName: ''};
-    const result = await fetchScoreForRepo(s, 0, 0, 0, 'repo');
-    assert.ok(result.score > 0);
-    assert.ok(result.characteristics.length > 0);
-  });
-
   test('retorna score e características corretos', async () => {
     const {server, baseUrl} = await createFullMockServer();
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'tok', productName: 'MeasureSoftGram'};
-      const result = await fetchScoreForRepo(s, MOCK_ORG.id, MOCK_PRODUCT.id, 6, 'repo');
+      const result = await fetchScoreForRepo(base(baseUrl), MOCK_ORG.id, MOCK_PRODUCT.id, 6, 'repo');
       assert.strictEqual(result.score, MOCK_TSQMI.value);
       assert.strictEqual(result.characteristics.length, MOCK_CHARS.length);
+      assert.strictEqual(result.characteristics[0].goal, 0.7);
       assert.ok(!result.noData);
     } finally {
       server.close();
@@ -172,8 +138,7 @@ suite('fetchScoreForRepo', () => {
   test('retorna noData=true quando repositório sem TSQMI calculado', async () => {
     const {server, baseUrl} = await createFullMockServer();
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'tok', productName: 'MeasureSoftGram'};
-      const result = await fetchScoreForRepo(s, MOCK_ORG.id, MOCK_PRODUCT.id, 9999, 'sem-dados');
+      const result = await fetchScoreForRepo(base(baseUrl), MOCK_ORG.id, MOCK_PRODUCT.id, 9999, 'sem-dados');
       assert.strictEqual(result.noData, true);
       assert.strictEqual(result.score, 0);
     } finally {
@@ -182,15 +147,9 @@ suite('fetchScoreForRepo', () => {
   });
 
   test('lança erro quando API retorna HTTP 401', async () => {
-    const {server, baseUrl} = await mockServer((req, res) => {
-      json(res, {detail: 'Não autenticado.'}, 401);
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {detail: 'Não autenticado.'}, 401));
     try {
-      const s: MsgramSettings = {serviceUrl: baseUrl, token: 'invalido', productName: 'P'};
-      await assert.rejects(
-          fetchScoreForRepo(s, 1, 1, 1, 'repo'),
-          /HTTP 401/,
-      );
+      await assert.rejects(fetchScoreForRepo(base(baseUrl, {token: 'invalido'}), 1, 1, 1, 'repo'), /HTTP 401/);
     } finally {
       server.close();
     }
@@ -200,47 +159,45 @@ suite('fetchScoreForRepo', () => {
 // ── fetchGrafanaDashboards ────────────────────────────────────────────────────
 
 const MOCK_DASHBOARDS = [
-  { uid: 'hierarquia-qualidade', title: 'Hierarquia de Qualidade', description: '', tags: ['measuresoftgram'], has_repo_selector: true },
-  { uid: 'planejado-realizado',  title: 'Planejado vs Realizado',  description: '', tags: ['measuresoftgram'], has_repo_selector: false },
+  {uid: 'hierarquia-qualidade', title: 'Hierarquia de Qualidade', description: '', tags: ['measuresoftgram'], has_repo_selector: true},
+  {uid: 'planejado-realizado', title: 'Planejado vs Realizado', description: '', tags: ['measuresoftgram'], has_repo_selector: false},
 ];
 
 suite('fetchGrafanaDashboards', () => {
   test('retorna lista de dashboards', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
+    const {server, baseUrl} = await mockServer((req, res) => {
       if (req.url === '/api/v1/grafana/dashboards/') {
-        return json(res, { count: MOCK_DASHBOARDS.length, results: MOCK_DASHBOARDS });
+        return json(res, {count: MOCK_DASHBOARDS.length, next: null, results: MOCK_DASHBOARDS});
       }
-      json(res, { detail: 'Not found.' }, 404);
+      json(res, {detail: 'Not found.'}, 404);
     });
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      const result = await fetchGrafanaDashboards(s);
+      const result = await fetchGrafanaDashboards(base(baseUrl));
       assert.strictEqual(result.length, MOCK_DASHBOARDS.length);
       assert.strictEqual(result[0].uid, 'hierarquia-qualidade');
       assert.strictEqual(result[0].has_repo_selector, true);
       assert.strictEqual(result[1].uid, 'planejado-realizado');
-    } finally { server.close(); }
+    } finally {
+      server.close();
+    }
   });
 
   test('retorna lista vazia quando não há dashboards', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
-      json(res, { count: 0, results: [] });
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {count: 0, next: null, results: []}));
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      const result = await fetchGrafanaDashboards(s);
-      assert.strictEqual(result.length, 0);
-    } finally { server.close(); }
+      assert.strictEqual((await fetchGrafanaDashboards(base(baseUrl))).length, 0);
+    } finally {
+      server.close();
+    }
   });
 
   test('lança erro quando API retorna HTTP 401', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
-      json(res, { detail: 'Não autenticado.' }, 401);
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {detail: 'Não autenticado.'}, 401));
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'invalido', productName: 'P' };
-      await assert.rejects(fetchGrafanaDashboards(s), /HTTP 401/);
-    } finally { server.close(); }
+      await assert.rejects(fetchGrafanaDashboards(base(baseUrl, {token: 'invalido'})), /HTTP 401/);
+    } finally {
+      server.close();
+    }
   });
 });
 
@@ -249,67 +206,64 @@ suite('fetchGrafanaDashboards', () => {
 const MOCK_DASHBOARD_DETAIL = {
   dashboard_uid: 'hierarquia-qualidade',
   title: 'Hierarquia de Qualidade',
-  grafana_url: 'http://localhost:5000/d/hierarquia-qualidade/hierarquia-de-qualidade?orgId=1&var-product=3&kiosk&theme=light',
+  grafana_url: 'https://grafana.example/d/hierarquia-qualidade?orgId=1&var-product=3&kiosk',
   product_id: 3,
   repository: null,
 };
 
 suite('fetchGrafanaDashboard', () => {
   test('retorna detalhe do dashboard com product_id', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
-      const url = new URL(req.url!, `http://127.0.0.1`);
+    const {server, baseUrl} = await mockServer((req, res) => {
+      const url = new URL(req.url!, 'http://127.0.0.1');
       if (url.pathname === '/api/v1/grafana/dashboard/hierarquia-qualidade/' && url.searchParams.get('product_id') === '3') {
         return json(res, MOCK_DASHBOARD_DETAIL);
       }
-      json(res, { detail: 'Not found.' }, 404);
+      json(res, {detail: 'Not found.'}, 404);
     });
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      const result = await fetchGrafanaDashboard(s, 'hierarquia-qualidade', 3);
+      const result = await fetchGrafanaDashboard(base(baseUrl), 'hierarquia-qualidade', 3);
       assert.strictEqual(result.dashboard_uid, 'hierarquia-qualidade');
       assert.strictEqual(result.product_id, 3);
       assert.strictEqual(result.repository, null);
-      assert.ok(result.grafana_url.startsWith('http'));
-    } finally { server.close(); }
+    } finally {
+      server.close();
+    }
   });
 
   test('envia repository_id quando fornecido', async () => {
-    const detail = { ...MOCK_DASHBOARD_DETAIL, repository: { id: 6, name: '2022-1-MeasureSoftGram-Service' } };
-    const { server, baseUrl } = await mockServer((req, res) => {
-      const url = new URL(req.url!, `http://127.0.0.1`);
-      if (
-        url.pathname === '/api/v1/grafana/dashboard/hierarquia-qualidade/' &&
-        url.searchParams.get('product_id') === '3' &&
-        url.searchParams.get('repository_id') === '6'
-      ) {
+    const detail = {...MOCK_DASHBOARD_DETAIL, repository: {id: 6, name: 'Service'}};
+    const {server, baseUrl} = await mockServer((req, res) => {
+      const url = new URL(req.url!, 'http://127.0.0.1');
+      if (url.pathname === '/api/v1/grafana/dashboard/hierarquia-qualidade/'
+          && url.searchParams.get('product_id') === '3'
+          && url.searchParams.get('repository_id') === '6') {
         return json(res, detail);
       }
-      json(res, { detail: 'Not found.' }, 404);
+      json(res, {detail: 'Not found.'}, 404);
     });
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      const result = await fetchGrafanaDashboard(s, 'hierarquia-qualidade', 3, 6);
-      assert.deepStrictEqual(result.repository, { id: 6, name: '2022-1-MeasureSoftGram-Service' });
-    } finally { server.close(); }
+      const result = await fetchGrafanaDashboard(base(baseUrl), 'hierarquia-qualidade', 3, 6);
+      assert.deepStrictEqual(result.repository, {id: 6, name: 'Service'});
+    } finally {
+      server.close();
+    }
   });
 
   test('lança erro quando dashboard não encontrado', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
-      json(res, { detail: 'Dashboard not found.' }, 404);
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {detail: 'Dashboard not found.'}, 404));
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      await assert.rejects(fetchGrafanaDashboard(s, 'uid-inexistente', 3), /HTTP 404/);
-    } finally { server.close(); }
+      await assert.rejects(fetchGrafanaDashboard(base(baseUrl), 'uid-inexistente', 3), /HTTP 404/);
+    } finally {
+      server.close();
+    }
   });
 
   test('lança erro quando API retorna HTTP 403', async () => {
-    const { server, baseUrl } = await mockServer((req, res) => {
-      json(res, { detail: 'You do not have permission to access this product.' }, 403);
-    });
+    const {server, baseUrl} = await mockServer((_req, res) => json(res, {detail: 'forbidden'}, 403));
     try {
-      const s: MsgramSettings = { serviceUrl: baseUrl, token: 'tok', productName: 'P' };
-      await assert.rejects(fetchGrafanaDashboard(s, 'hierarquia-qualidade', 999), /HTTP 403/);
-    } finally { server.close(); }
+      await assert.rejects(fetchGrafanaDashboard(base(baseUrl), 'hierarquia-qualidade', 999), /HTTP 403/);
+    } finally {
+      server.close();
+    }
   });
 });

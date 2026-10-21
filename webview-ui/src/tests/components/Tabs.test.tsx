@@ -4,9 +4,9 @@ import {Tabs} from '../../components/Tabs';
 import type {TabName} from '../../types';
 
 const TabsTest: { id: TabName; label: string; icon: string }[] = [
-    {id: 'dashboard', label: 'Painel', icon: 'ti-chart-radar'},
-    {id: 'settings', label: 'Config', icon: 'ti-settings'},
-    {id: 'action', label: 'Action', icon: 'ti-file-code'},
+    {id: 'dashboard', label: 'Painel', icon: 'codicon-dashboard'},
+    {id: 'settings', label: 'Config', icon: 'codicon-settings-gear'},
+    {id: 'action', label: 'Action', icon: 'codicon-file-code'},
 ];
 
 describe('Tabs', () => {
@@ -34,7 +34,7 @@ describe('Tabs', () => {
     it.each(TabsTest)('deve renderizar o ícone "$icon" na aba "$id"', ({icon}) => {
         render(<Tabs active="dashboard" onSelect={onSelect}/>);
         const tab = document.getElementById(`tab-${TabsTest[0].id}`)!.parentElement!;
-        const icons = tab.querySelectorAll(`i.ti.${icon}`);
+        const icons = tab.querySelectorAll(`i.codicon.${icon}`);
         expect(icons.length).toBeGreaterThan(0);
     });
 

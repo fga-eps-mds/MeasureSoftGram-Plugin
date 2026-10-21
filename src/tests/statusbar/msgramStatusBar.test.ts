@@ -34,7 +34,7 @@ suite('MsgramStatusBar', () => {
         const item = makeFakeItem();
         new MsgramStatusBar(makeDeps(item));
 
-        assert.strictEqual(item.command, 'msgram.sidebarView.focus');
+        assert.strictEqual(item.command, 'msgram.qualityView.focus');
         assert.strictEqual(item.tooltip, 'MeasureSoftGram — clique para abrir');
         assert.strictEqual(item.showCalled, true);
     });
@@ -111,5 +111,16 @@ suite('MsgramStatusBar', () => {
         sb.dispose();
 
         assert.strictEqual(item.disposeCalled, true);
+    });
+
+    test('setNotConfigured mostra o ícone de engrenagem sem cor de alerta', () => {
+        const item = makeFakeItem();
+        const bar = new MsgramStatusBar(makeDeps(item));
+
+        bar.setNotConfigured();
+
+        assert.strictEqual(item.text, '$(gear) MSGRAM: configurar');
+        assert.strictEqual(item.color, undefined);
+        assert.strictEqual(item.backgroundColor, undefined);
     });
 });

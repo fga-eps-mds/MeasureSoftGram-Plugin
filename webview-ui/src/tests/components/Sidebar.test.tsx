@@ -17,9 +17,12 @@ const REPOS: RepoItem[] = [
 
 const SCORE_DATA: ScoreData = {
     score: 0.87,
+    noData: false,
+    lastAnalysisAt: '2026-10-01T00:00:00Z',
+    hasGoal: true,
     characteristics: [
-        {name: 'Reliability', value: 0.9, goal: 0.8},
-        {name: 'Maintainability', value: 0.75, goal: 0.85},
+        { key: 'reliability', name: 'Reliability', value: 0.9, goal: 0.8, measuredAt: '2026-10-01T00:00:00Z' },
+        { key: 'maintainability', name: 'Maintainability', value: 0.75, goal: 0.85, measuredAt: '2026-10-01T00:00:00Z' },
     ],
 };
 
@@ -48,6 +51,12 @@ describe('Sidebar', () => {
         it('deve exibir o subtítulo de análise multidimensional', () => {
             render(<Sidebar {...DEFAULT_PROPS}/>);
             expect(screen.getByText(/Análise multidimensional/)).toBeInTheDocument();
+        });
+
+        it('deve exibir o rótulo "TSQMI" no lugar do rótulo antigo "Nota do Produto"', () => {
+            render(<Sidebar {...DEFAULT_PROPS}/>);
+            expect(screen.getAllByText('TSQMI').length).toBeGreaterThan(0);
+            expect(screen.queryByText('Nota do Produto')).not.toBeInTheDocument();
         });
     });
 
@@ -96,7 +105,7 @@ describe('Sidebar', () => {
         it('deve exibir ícone de loading no score-box quando scoreLoading', () => {
             render(<Sidebar {...DEFAULT_PROPS} scoreLoading={true}/>);
             const scoreBox = document.getElementById('sb-score')!;
-            expect(scoreBox.querySelector('.ti-loader')).toBeInTheDocument();
+            expect(scoreBox.querySelector('.codicon-loading')).toBeInTheDocument();
         });
 
         it('deve exibir o score formatado quando há dados', () => {
@@ -131,16 +140,17 @@ describe('Sidebar', () => {
             expect(screen.getByText('Sem dados')).toBeInTheDocument();
         });
 
-        it('deve usar cor verde no dot quando há scoreData', () => {
+        it('marca o dot como "on" quando há scoreData (cor vem do tema via CSS)', () => {
             render(<Sidebar {...DEFAULT_PROPS} scoreData={SCORE_DATA}/>);
             const dot = document.querySelector('.sdot') as HTMLElement;
-            expect(dot.style.background).toBe('rgb(4, 114, 77)');
+            expect(dot).toHaveClass('on');
+            expect(dot.getAttribute('style')).toBeNull();
         });
 
-        it('deve usar cor cinza no dot quando não há scoreData', () => {
+        it('marca o dot como "off" quando não há scoreData', () => {
             render(<Sidebar {...DEFAULT_PROPS} scoreData={null}/>);
             const dot = document.querySelector('.sdot') as HTMLElement;
-            expect(dot).toHaveStyle({background: '#888'});
+            expect(dot).toHaveClass('off');
         });
     });
 
@@ -156,7 +166,7 @@ describe('Sidebar', () => {
         });
 
         it('deve exibir "nenhum dado disponível" quando noData', () => {
-            render(<Sidebar {...DEFAULT_PROPS} scoreData={{score: 0, characteristics: [], noData: true}}/>);
+            render(<Sidebar {...DEFAULT_PROPS} scoreData={{score: 0, characteristics: [], noData: true, lastAnalysisAt: null, hasGoal: false}}/>);
             expect(screen.getByText('nenhum dado disponível')).toBeInTheDocument();
         });
 

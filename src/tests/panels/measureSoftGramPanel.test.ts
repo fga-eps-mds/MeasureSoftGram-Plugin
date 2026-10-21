@@ -31,7 +31,8 @@ function makePanel(webview: ReturnType<typeof makeWebview>) {
 
 function makeExtensionContext() {
     const ws: Record<string, any> = {};
-    const sec: Record<string, string> = {};
+    const sec: Record<string, string> = { 'msgram.token': 'tok' };
+    (require('vscode').workspace._config.msgram ??= {}).productName = 'measuresoftgram';
     return {
         workspaceState: {
             get<T>(key: string, def: T): T { return ws[key] ?? def; },
@@ -40,6 +41,7 @@ function makeExtensionContext() {
         secrets: {
             get(key: string) { return Promise.resolve(sec[key] ?? ''); },
             store(key: string, v: string) { sec[key] = v; return Promise.resolve(); },
+            delete(key: string) { delete sec[key]; return Promise.resolve(); },
         },
         extensionUri: { fsPath: '/fake/ext', toString: () => 'file:///fake/ext' },
     };
@@ -54,7 +56,7 @@ function makeVsWindow(webview: ReturnType<typeof makeWebview>) {
 }
 
 function makeFetchRepos(repos = [{ id: 1, name: 'repo-x' }]) {
-    return async () => ({ repos, orgPk: 1, productPk: 2 });
+    return async () => ({ repos, orgPk: 1, orgName: 'org', organizations: [{ id: 1, name: 'org' }], productPk: 2, productName: 'P' });
 }
 
 function makeFetchScore(result: any = { score: 0.9, noData: false, characteristics: [] }) {
@@ -111,7 +113,7 @@ function createPanel(webview = makeWebview()) {
     const ctx = makeExtensionContext();
     const vsWindow = makeVsWindow(webview);
     MeasureSoftGramPanel.currentPanel = undefined;
-    MeasureSoftGramPanel.render(ctx as any, vsWindow as any);
+    MeasureSoftGramPanel.render(ctx as any, undefined, vsWindow as any);
     const panel = MeasureSoftGramPanel.currentPanel!;
     return { panel, webview, ctx };
 }
@@ -131,7 +133,7 @@ suite('MeasureSoftGramPanel — render', () => {
 
         const ctx = makeExtensionContext();
         const vsWindow = makeVsWindow(webview);
-        MeasureSoftGramPanel.render(ctx as any, vsWindow as any);
+        MeasureSoftGramPanel.render(ctx as any, undefined, vsWindow as any);
 
         assert.strictEqual(MeasureSoftGramPanel.currentPanel, first);
     });
@@ -234,11 +236,21 @@ suite('MeasureSoftGramPanel — handleMessage: save_action', () => {
     });
 });
 
-suite('MeasureSoftGramPanel — handleMessage: run_action', () => {
+suite('MeasureSoftGramPanel — handleMessage: run_action (via ActRunner)', () => {
     teardown(() => { MeasureSoftGramPanel.currentPanel = undefined; });
 
-    test('cria terminal, exibe e envia o comando docker', async () => {
-        const { panel } = createPanel();
+    function fakeRunner(check: any) {
+        return { isRunning: false, isStopping: false, runCalls: [] as any[],
+            async checkDocker() { return check; },
+            run(o: any) { this.isRunning = true; this.runCalls.push(o); return true; },
+            async stop() {}, dispose() {} };
+    }
+
+    test('salva o workflow e, com Docker ausente, emite analysis_blocked sem abrir terminal', async () => {
+        const { panel, webview, ctx } = createPanel();
+        await (ctx as any).secrets.store('msgram.githubToken', 'ghp');
+        const runner = fakeRunner({ ok: false, reason: 'docker_missing', detail: 'ENOENT' });
+        (panel as any)._actRunner = runner;
         const deps = makeActionDeps();
 
         await panel.handleMessage(
@@ -247,16 +259,16 @@ suite('MeasureSoftGramPanel — handleMessage: run_action', () => {
             deps.workspace as any, deps.fs as any, deps.window as any,
         );
 
-        assert.strictEqual(deps._terminals.length, 1);
-        const t = deps._terminals[0];
-        assert.strictEqual(t.shown, true);
-        assert.ok(t.texts.includes('docker compose up --build --abort-on-container-exit'));
-        assert.strictEqual(t.opts.name, 'MeasureSoftGram · Act');
-        assert.ok(t.opts.env.WORKSPACE_PATH.includes('/fake/workspace'));
+        assert.strictEqual(deps._written.length, 1, 'workflow salvo (ação explícita)');
+        assert.strictEqual(deps._terminals.length, 0, 'nenhum terminal');
+        assert.strictEqual(runner.runCalls.length, 0);
+        const blocked = webview._messages.find((m: any) => m.command === 'analysis_blocked');
+        assert.strictEqual(blocked?.reason, 'docker_missing');
     });
 
-    test('run_action sem workspace mostra erro e não cria terminal', async () => {
-        const { panel } = createPanel();
+    test('run_action sem workspace emite analysis_blocked no_workspace', async () => {
+        const { panel, webview } = createPanel();
+        (panel as any)._actRunner = fakeRunner({ ok: true, version: '29' });
         const deps = makeActionDeps({ hasWorkspace: false });
 
         await panel.handleMessage(
@@ -266,6 +278,52 @@ suite('MeasureSoftGramPanel — handleMessage: run_action', () => {
         );
 
         assert.strictEqual(deps._terminals.length, 0);
-        assert.strictEqual(deps._errors.length, 1);
+        const blocked = webview._messages.find((m: any) => m.command === 'analysis_blocked');
+        assert.strictEqual(blocked?.reason, 'no_workspace');
+    });
+});
+
+suite('MeasureSoftGramPanel — status bar (US4)', () => {
+    teardown(() => { MeasureSoftGramPanel.currentPanel = undefined; });
+
+    function makeStatusBar() {
+        return {
+            calls: [] as string[],
+            lastScore: undefined as number | undefined,
+            setLoading()        { this.calls.push('loading'); },
+            setScore(s: number) { this.calls.push('score'); this.lastScore = s; },
+            setNoData()         { this.calls.push('noData'); },
+            setError()          { this.calls.push('error'); },
+            setNotConfigured()  { this.calls.push('notConfigured'); },
+            dispose()           {},
+        };
+    }
+
+    test('render recebe a status bar e o painel a atualiza ao carregar o score', async () => {
+        const webview = makeWebview();
+        const ctx = makeExtensionContext();
+        const vsWindow = makeVsWindow(webview);
+        const sb = makeStatusBar();
+        MeasureSoftGramPanel.currentPanel = undefined;
+        MeasureSoftGramPanel.render(ctx as any, sb as any, vsWindow as any);
+        const panel = MeasureSoftGramPanel.currentPanel!;
+
+        await panel.handleMessage({ command: 'request_score' }, makeFetchRepos(), makeFetchScore({ score: 0.77, noData: false, characteristics: [] }));
+
+        assert.ok(sb.calls.includes('loading'));
+        assert.strictEqual(sb.lastScore, 0.77);
+        assert.strictEqual(sb.calls[sb.calls.length - 1], 'score', 'não fica em loading');
+    });
+
+    test('erro no painel leva a status bar para erro', async () => {
+        const webview = makeWebview();
+        const sb = makeStatusBar();
+        MeasureSoftGramPanel.currentPanel = undefined;
+        MeasureSoftGramPanel.render(makeExtensionContext() as any, sb as any, makeVsWindow(webview) as any);
+        const panel = MeasureSoftGramPanel.currentPanel!;
+
+        await panel.handleMessage({ command: 'request_score' }, makeFetchReposError('x'), makeFetchScore());
+
+        assert.strictEqual(sb.calls[sb.calls.length - 1], 'error');
     });
 });

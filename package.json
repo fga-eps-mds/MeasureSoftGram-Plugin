@@ -2,10 +2,10 @@
   "name": "measuresoftgram",
   "displayName": "MeasureSoftGram",
   "description": "Análise multidimensional da qualidade de software, direto no VS Code.",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "publisher": "MeasureSoftGram",
   "license": "AGPL-3.0",
-  "homepage": "https://msgram.lappis.rocks/",
+  "homepage": "https://fga-eps-mds.github.io/MeasureSoftGram-Docs/",
   "repository": {
     "type": "git",
     "url": "https://github.com/fga-eps-mds/MeasureSoftGram-Plugin"
@@ -19,7 +19,8 @@
     "theme": "dark"
   },
   "engines": {
-    "vscode": "^1.120.0"
+    "vscode": "^1.120.0",
+    "node": ">=22"
   },
   "categories": [
     "Other",
@@ -37,7 +38,6 @@
     "static analysis",
     "sonarqube",
     "release quality",
-    "lappis",
     "unb"
   ],
   "activationEvents": [],
@@ -55,9 +55,16 @@
     "views": {
       "msgram-sidebar": [
         {
+          "id": "msgram.qualityView",
+          "name": "Qualidade",
+          "icon": "assets/icon.svg",
+          "contextualTitle": "MeasureSoftGram"
+        },
+        {
           "type": "webview",
           "id": "msgram.sidebarView",
-          "name": "Measure"
+          "name": "Painel",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -67,50 +74,218 @@
         "title": "Abrir MeasureSoftGram (Panel)",
         "icon": "$(graph)",
         "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.openSettings",
+        "title": "Configurar",
+        "icon": "$(gear)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.clearTokens",
+        "title": "Remover tokens salvos",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.refresh",
+        "title": "Atualizar",
+        "icon": "$(refresh)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.selectRepository",
+        "title": "Trocar repositório",
+        "icon": "$(repo)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.selectOrganization",
+        "title": "Trocar organização",
+        "icon": "$(organization)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.openDashboard",
+        "title": "Abrir dashboard do Grafana",
+        "icon": "$(graph)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.openActionTab",
+        "title": "Executar Action localmente",
+        "icon": "$(play)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.openSite",
+        "title": "Abrir site do MeasureSoftGram",
+        "icon": "$(link-external)",
+        "category": "MeasureSoftGram"
+      },
+      {
+        "command": "msgram.registerRepo",
+        "title": "Cadastrar este repositório no MeasureSoftGram",
+        "icon": "$(cloud-upload)",
+        "category": "MeasureSoftGram"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "msgram.run"
+        },
+        {
+          "command": "msgram.openSettings"
+        },
+        {
+          "command": "msgram.clearTokens"
+        },
+        {
+          "command": "msgram.refresh"
+        },
+        {
+          "command": "msgram.selectRepository"
+        },
+        {
+          "command": "msgram.selectOrganization"
+        },
+        {
+          "command": "msgram.openActionTab"
+        },
+        {
+          "command": "msgram.openDashboard",
+          "when": "false"
+        },
+        {
+          "command": "msgram.openSite"
+        },
+        {
+          "command": "msgram.registerRepo"
         }
       ],
       "view/title": [
         {
+          "command": "msgram.refresh",
+          "when": "view == msgram.qualityView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "msgram.selectRepository",
+          "when": "view == msgram.qualityView && msgram.configured",
+          "group": "navigation@2"
+        },
+        {
+          "command": "msgram.openSettings",
+          "when": "view == msgram.qualityView",
+          "group": "navigation@3"
+        },
+        {
           "command": "msgram.run",
-          "when": "view == msgram.sidebarView",
-          "group": "navigation"
+          "when": "view == msgram.qualityView || view == msgram.sidebarView",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "msgram.selectRepository",
+          "when": "view == msgram.qualityView && viewItem == repo",
+          "group": "inline"
+        },
+        {
+          "command": "msgram.selectOrganization",
+          "when": "view == msgram.qualityView && viewItem == product",
+          "group": "inline"
         }
       ]
-    }
+    },
+    "configuration": {
+      "title": "MeasureSoftGram",
+      "properties": {
+        "msgram.serviceUrl": {
+          "type": "string",
+          "default": "https://msgram.lappis.rocks",
+          "description": "URL base do serviço MeasureSoftGram."
+        },
+        "msgram.productName": {
+          "type": "string",
+          "default": "",
+          "description": "Nome do produto cadastrado no serviço MeasureSoftGram."
+        },
+        "msgram.organizationName": {
+          "type": "string",
+          "default": "",
+          "description": "Organização a usar quando a conta tiver mais de uma. Vazio = a primeira."
+        },
+        "msgram.sonarProjectKey": {
+          "type": "string",
+          "default": "",
+          "description": "Chave do projeto no SonarCloud (opcional, usada pela Action)."
+        },
+        "msgram.workflowName": {
+          "type": "string",
+          "default": "Build",
+          "description": "Nome do workflow de build que a Action observa (on: workflow_run)."
+        },
+        "msgram.requestTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Tempo limite de cada requisição ao serviço, em milissegundos."
+        },
+        "msgram.grafanaAllowedHosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Hosts permitidos para os dashboards do Grafana. Vazio = qualquer host HTTPS."
+        }
+      }
+    },
+    "viewsWelcome": [
+      {
+        "view": "msgram.qualityView",
+        "contents": "A extensão ainda não está configurada.\nInforme o token da sua conta no [MeasureSoftGram](https://msgram.lappis.rocks) e o nome do produto.\n[Configurar](command:msgram.openSettings)\n[Editar settings.json](command:workbench.action.openSettings?%5B%22msgram%22%5D)",
+        "when": "!msgram.configured"
+      }
+    ]
   },
   "scripts": {
     "install:all": "npm install && cd webview-ui && npm install",
     "start:webview": "cd webview-ui && npm run start",
     "build:webview": "cd webview-ui && npm run build",
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build:webview && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test",
-    "test:unit": "npm run compile && mocha --ui tdd --timeout 10000 --require './out/tests/vscode.mock.js' 'out/tests/**/*.test.js'",
-    "test:coverage": "npm run compile && c8 --reporter=lcov --reporter=text --src src --exclude 'out/tests/**' --exclude '.mocharc.cjs' mocha --ui tdd --timeout 10000 --require './out/tests/vscode.mock.js' 'out/tests/**/*.test.js'",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "npm run compile && mocha --ui tdd --timeout 10000 --require './out/tests/vscode.mock.js' 'out/tests/**/*.test.js' --ignore 'out/tests/integration/**'",
+    "test:coverage": "npm run compile && c8 --reporter=lcov --reporter=text --src src --exclude 'out/tests/**' --exclude '.mocharc.cjs' mocha --ui tdd --timeout 10000 --require './out/tests/vscode.mock.js' 'out/tests/**/*.test.js' --ignore 'out/tests/integration/**'",
     "test:webview-run": "cd webview-ui && npm run test:run",
     "test:webview-watch": "cd webview-ui && npm run test:watch",
     "test:webview-coverage": "cd webview-ui && npm run test:coverage",
-    "test:all": "npm run test:webview-run && npm test"
+    "test:all": "npm run test:webview-run && npm test",
+    "lint:webview": "cd webview-ui && npm run lint",
+    "test:integration": "npm run compile && vscode-test",
+    "package": "npx @vscode/vsce package --no-git-tag-version"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.120.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
     "c8": "^10.1.3",
     "eslint": "^9.39.3",
-    "mocha": "^11.7.6",
+    "mocha": "^12.0.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"
+  },
+  "overrides": {
+    "@vscode/test-cli": {
+      "mocha": "$mocha"
+    }
   }
 }

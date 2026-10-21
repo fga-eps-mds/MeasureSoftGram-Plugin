@@ -17,7 +17,7 @@ export class MsgramStatusBar {
 
   constructor(deps: StatusBarDeps = getDefaultDeps()) {
     this._item = deps.createStatusBarItem(1, 100);
-    this._item.command = 'msgram.sidebarView.focus';
+    this._item.command = 'msgram.qualityView.focus';
     this._item.tooltip = 'MeasureSoftGram — clique para abrir';
     this.setLoading();
     this._item.show();
@@ -38,6 +38,12 @@ export class MsgramStatusBar {
     } else {
       this._item.color = new deps.ThemeColor('charts.red');
     }
+    this._item.backgroundColor = undefined;
+  }
+
+  setNotConfigured(): void {
+    this._item.text = '$(gear) MSGRAM: configurar';
+    this._item.color = undefined;
     this._item.backgroundColor = undefined;
   }
 

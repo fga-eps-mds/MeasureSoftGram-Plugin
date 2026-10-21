@@ -1,5 +1,17 @@
-import * as https from 'node:https';
-import * as http from 'node:http';
+/**
+ * Cliente do MeasureSoftGram-Service.
+ *
+ * Rotas e formatos: specs/001-fix-diagnostico-2026-2/contracts/msgram-api.md.
+ * Não existe mais caminho "mockado": sem token o serviço responde 401 e o
+ * erro sobe como HttpError{kind:'auth'}. A classe base evita chegar aqui
+ * quando a extensão não está configurada.
+ */
+import {getAll, HttpError, request} from './httpClient';
+import {timestamp as ts} from '../utilities/log';
+import type {Characteristic, OrgItem, RepoItem, ScoreData} from '../panels/messages';
+import {pickMatchingRepo, WorkspaceHints} from '../utilities/workspaceRepo';
+
+export type {Characteristic, OrgItem, RepoItem, ScoreData};
 
 export type Logger = (message: string) => void;
 
@@ -7,118 +19,20 @@ export interface MsgramSettings {
   serviceUrl: string;
   token: string;
   productName: string;
-}
-
-export interface RepoItem {
-  id: number;
-  name: string;
+  /** vazio = primeira organização */
+  organizationName?: string;
+  /** escolhida no seletor da interface; tem prioridade sobre o nome */
+  organizationPk?: number;
+  requestTimeoutMs?: number;
 }
 
 export interface RepoContext {
   orgPk: number;
+  orgName: string;
+  organizations: OrgItem[];
   productPk: number;
+  productName: string;
   repos: RepoItem[];
-}
-
-export interface Characteristic {
-  name: string;
-  value: number;
-  goal: number;
-}
-
-export interface ScoreData {
-  score: number;
-  characteristics: Characteristic[];
-  noData?: boolean;
-}
-
-const MOCK_REPOS: RepoItem[] = [
-  {id: 1, name: 'mock-repo-frontend'},
-  {id: 2, name: 'mock-repo-backend'},
-];
-
-const MOCK_SCORE: ScoreData = {
-  score: 0.94,
-  characteristics: [
-    {name: 'Reliability', value: 0.82, goal: 0.8},
-    {name: 'Maintainability', value: 0.68, goal: 0.75},
-    {name: 'Security', value: 0.71, goal: 0.7},
-  ],
-};
-
-function get<T>(url: string, token: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const client = new URL(url).protocol === 'https:' ? https : http;
-    const req = client.request(
-        url,
-        {method: 'GET', headers: {Authorization: `Token ${token}`}},
-        (res) => {
-          let raw = '';
-          res.on('data', (c) => (raw += c));
-          res.on('end', () => {
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(`HTTP ${res.statusCode}: ${raw}`));
-            } else {
-              try {
-                resolve(JSON.parse(raw));
-              } catch {
-                reject(new Error(`JSON inválido: ${raw}`));
-              }
-            }
-          });
-        },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-function post<T>(url: string, body: object, token?: string): Promise<T> {
-  const payload = JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const client = new URL(url).protocol === 'https:' ? https : http;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Content-Length': String(Buffer.byteLength(payload)),
-    };
-    if (token) {
-      headers['Authorization'] = `Token ${token}`;
-    }
-    const req = client.request(url, {method: 'POST', headers}, (res) => {
-      let raw = '';
-      res.on('data', (c) => (raw += c));
-      res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode}: ${raw}`));
-        } else {
-          try {
-            resolve(JSON.parse(raw));
-          } catch {
-            reject(new Error(`JSON inválido: ${raw}`));
-          }
-        }
-      });
-    });
-    req.on('error', reject);
-    req.write(payload);
-    req.end();
-  });
-}
-
-function ts(): string {
-  return new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
-}
-
-export async function login(
-    serviceUrl: string,
-    username: string,
-    password: string,
-): Promise<string> {
-  const res = await post<{ key: string }>(
-      `${serviceUrl}/api/v1/accounts/login/`,
-      {username, password},
-  );
-  return res.key;
 }
 
 // ── Grafana types ─────────────────────────────────────────────────────────────
@@ -141,92 +55,237 @@ export interface GrafanaDashboardDetail {
 
 // ── Internal types ────────────────────────────────────────────────────────────
 
-interface OrgItem {
-  id: number;
-  name: string
-}
-
 interface ProductItem {
   id: number;
-  name: string
+  name: string;
 }
 
 interface TsqmiResp {
-  value: number
+  value: number | null;
 }
 
 interface CharItem {
+  key: string;
   name: string;
-  latest: { value: number }
+  latest: { value: number; created_at: string } | null;
 }
 
-export async function fetchRepositories(
-    settings: MsgramSettings,
-    log: Logger = () => {
-    },
-): Promise<RepoContext> {
-  if (!settings.serviceUrl || !settings.token) {
-    log(`[${ts()}] Sem configuração — usando repositórios mockados.`);
-    return {orgPk: 0, productPk: 0, repos: MOCK_REPOS};
-  }
+interface GoalResp {
+  data: Record<string, number>;
+}
 
-  const {serviceUrl, token, productName} = settings;
+const noop: Logger = () => {};
 
-  const orgsUrl = `${serviceUrl}/api/v1/organizations/`;
+function norm(s: string): string {
+  return (s ?? '').trim().toLowerCase();
+}
+
+function apiBase(settings: MsgramSettings): string {
+  return `${settings.serviceUrl.replace(/\/+$/, '')}/api/v1`;
+}
+
+function opts(settings: MsgramSettings) {
+  return {token: settings.token, timeoutMs: settings.requestTimeoutMs};
+}
+
+// ── Organização → produto → repositórios ─────────────────────────────────────
+
+export async function fetchRepositories(settings: MsgramSettings, log: Logger = noop): Promise<RepoContext> {
+  const base = apiBase(settings);
+  const o = opts(settings);
+
+  const orgsUrl = `${base}/organizations/`;
   log(`[${ts()}] GET ${orgsUrl}`);
-  const orgs = await get<{ results: OrgItem[] }>(orgsUrl, token);
-  if (!orgs.results.length) {
-    throw new Error('Nenhuma organização encontrada.');
+  const organizations = await getAll<OrgItem>(orgsUrl, o);
+  if (!organizations.length) {
+    throw new HttpError('Nenhuma organização encontrada para este token.', 'not_found', 404);
   }
-  const orgPk = orgs.results[0].id;
-  log(`[${ts()}] → Organização: "${orgs.results[0].name}" (id=${orgPk})`);
 
-  const productsUrl = `${serviceUrl}/api/v1/organizations/${orgPk}/products/`;
+  let org = organizations[0];
+  const wanted = norm(settings.organizationName ?? '');
+  const byPk = settings.organizationPk !== undefined ? organizations.find((x) => x.id === settings.organizationPk) : undefined;
+  if (byPk) {
+    org = byPk;
+  } else if (wanted) {
+    const found = organizations.find((x) => norm(x.name) === wanted);
+    if (!found) {
+      throw new HttpError(
+          `Organização "${settings.organizationName}" não encontrada. Disponíveis: ${organizations.map((x) => x.name).join(', ')}`,
+          'not_found', 404,
+      );
+    }
+    org = found;
+  }
+  log(`[${ts()}] → Organização: "${org.name}" (id=${org.id})`);
+
+  const productsUrl = `${base}/organizations/${org.id}/products/`;
   log(`[${ts()}] GET ${productsUrl}`);
-  const products = await get<{ results: ProductItem[] }>(productsUrl, token);
-  const product = products.results.find(
-      (p) => p.name.toLowerCase() === productName.toLowerCase(),
-  );
+  const products = await getAll<ProductItem>(productsUrl, o);
+  const product = products.find((p) => norm(p.name) === norm(settings.productName));
   if (!product) {
-    throw new Error(`Produto "${productName}" não encontrado.`);
+    const names = products.map((p) => p.name.trim()).join(', ') || 'nenhum';
+    throw new HttpError(`Produto "${settings.productName}" não encontrado. Disponíveis: ${names}`, 'not_found', 404);
   }
-  log(`[${ts()}] → Produto: "${product.name}" (id=${product.id})`);
+  log(`[${ts()}] → Produto: "${product.name.trim()}" (id=${product.id})`);
 
-  const reposUrl = `${serviceUrl}/api/v1/organizations/${orgPk}/products/${product.id}/repositories/`;
+  const reposUrl = `${base}/organizations/${org.id}/products/${product.id}/repositories/`;
   log(`[${ts()}] GET ${reposUrl}`);
-  const reposRes = await get<{ results: RepoItem[] }>(reposUrl, token);
-  log(`[${ts()}] → ${reposRes.results.length} repositório(s): ${reposRes.results.map(r => r.name).join(', ')}`);
+  const repos = await getAll<RepoItem>(reposUrl, o);
+  log(`[${ts()}] → ${repos.length} repositório(s): ${repos.map((r) => r.name).join(', ')}`);
 
-  return {orgPk, productPk: product.id, repos: reposRes.results};
+  return {
+    orgPk: org.id,
+    orgName: org.name,
+    organizations,
+    productPk: product.id,
+    productName: product.name.trim(),
+    repos,
+  };
 }
 
-// ── Grafana ───────────────────────────────────────────────────────────────────
-
-export async function fetchGrafanaDashboards(
-  settings: MsgramSettings,
-  log: Logger = () => {},
-): Promise<GrafanaDashboard[]> {
-  const url = `${settings.serviceUrl}/api/v1/grafana/dashboards/`;
-  log(`[${ts()}] GET ${url}`);
-  const res = await get<{ count: number; results: GrafanaDashboard[] }>(url, settings.token);
-  log(`[${ts()}] → ${res.results.length} dashboard(s) encontrado(s).`);
-  return res.results;
+export interface DiscoveredRepo extends RepoContext {
+  repo: RepoItem;
 }
 
-export async function fetchGrafanaDashboard(
-  settings: MsgramSettings,
-  uid: string,
-  productId: number,
-  repositoryId?: number,
-  log: Logger = () => {},
-): Promise<GrafanaDashboardDetail> {
-  const params = new URLSearchParams({ product_id: String(productId) });
-  if (repositoryId !== undefined) { params.set('repository_id', String(repositoryId)); }
-  const url = `${settings.serviceUrl}/api/v1/grafana/dashboard/${uid}/?${params}`;
+/**
+ * Procura, em todas as organizações e produtos do token, um repositório que
+ * case com a pasta aberta (remote origin ou nome da pasta). Devolve o
+ * primeiro casamento exato; se não houver, o primeiro por sufixo.
+ * Usado quando o produto configurado não contém o repositório atual.
+ */
+export async function discoverRepository(
+    settings: Pick<MsgramSettings, 'serviceUrl' | 'token' | 'requestTimeoutMs'>,
+    hints: WorkspaceHints,
+    log: Logger = noop,
+): Promise<DiscoveredRepo | null> {
+  if (!hints.remoteName && !hints.folderName) {
+    return null;
+  }
+  const base = apiBase(settings as MsgramSettings);
+  const o = opts(settings as MsgramSettings);
+  const organizations = await getAll<OrgItem>(`${base}/organizations/`, o);
+  log(`[${ts()}] Procurando "${hints.remoteName ?? hints.folderName}" em ${organizations.length} organização(ões)…`);
+
+  let fallback: DiscoveredRepo | null = null;
+  const exactNames = [hints.remoteName, hints.folderName].filter((h): h is string => !!h).map((h) => norm(h));
+
+  for (const org of organizations) {
+    let products: ProductItem[];
+    try {
+      products = await getAll<ProductItem>(`${base}/organizations/${org.id}/products/`, o);
+    } catch (err) {
+      log(`[${ts()}] → "${org.name}": não foi possível listar produtos (${(err as Error).message}); pulando.`);
+      continue;
+    }
+    for (const product of products) {
+      let repos: RepoItem[];
+      try {
+        repos = await getAll<RepoItem>(`${base}/organizations/${org.id}/products/${product.id}/repositories/`, o);
+      } catch (err) {
+        log(`[${ts()}] → "${org.name}" / "${product.name.trim()}": sem acesso aos repositórios (${(err as Error).message}); pulando.`);
+        continue;
+      }
+      const match = pickMatchingRepo(repos, hints);
+      if (!match) {
+        continue;
+      }
+      const found: DiscoveredRepo = {
+        orgPk: org.id, orgName: org.name, organizations,
+        productPk: product.id, productName: product.name.trim(), repos, repo: match,
+      };
+      if (exactNames.includes(norm(match.name))) {
+        log(`[${ts()}] → Encontrado em "${org.name}" / "${product.name.trim()}": ${match.name}`);
+        return found;
+      }
+      fallback ??= found;
+    }
+  }
+  if (fallback) {
+    log(`[${ts()}] → Encontrado por sufixo em "${fallback.orgName}" / "${fallback.productName}": ${fallback.repo.name}`);
+  } else {
+    log(`[${ts()}] → Repositório da pasta aberta não está em nenhum produto desta conta.`);
+  }
+  return fallback;
+}
+
+// ── Cadastro ──────────────────────────────────────────────────────────────────
+
+export interface ProductSummary {
+  id: number;
+  name: string;
+}
+
+export async function listProducts(settings: MsgramSettings, orgPk: number, log: Logger = noop): Promise<ProductSummary[]> {
+  const url = `${apiBase(settings)}/organizations/${orgPk}/products/`;
   log(`[${ts()}] GET ${url}`);
-  const res = await get<GrafanaDashboardDetail>(url, settings.token);
-  log(`[${ts()}] → Dashboard "${res.title}" — ${res.grafana_url}`);
-  return res;
+  const products = await getAll<ProductItem>(url, opts(settings));
+  return products.map((p) => ({id: p.id, name: p.name.trim()}));
+}
+
+export async function createProduct(
+    settings: MsgramSettings,
+    orgPk: number,
+    data: { name: string; description?: string },
+    log: Logger = noop,
+): Promise<ProductSummary> {
+  const url = `${apiBase(settings)}/organizations/${orgPk}/products/`;
+  log(`[${ts()}] POST ${url} (${data.name})`);
+  const res = await request<ProductItem>(url, {...opts(settings), method: 'POST', body: {name: data.name, description: data.description ?? ''}});
+  return {id: res.id, name: res.name.trim()};
+}
+
+/**
+ * Cria o repositório no produto. O Service dispara a primeira coleta em
+ * segundo plano (onboarding), então o score pode demorar alguns minutos.
+ */
+export async function createRepository(
+    settings: MsgramSettings,
+    orgPk: number,
+    productPk: number,
+    data: { name: string; url?: string; description?: string; platform?: 'github' | 'gitlab' | 'bitbucket' },
+    log: Logger = noop,
+): Promise<RepoItem> {
+  const url = `${apiBase(settings)}/organizations/${orgPk}/products/${productPk}/repositories/`;
+  log(`[${ts()}] POST ${url} (${data.name})`);
+  const res = await request<RepoItem>(url, {
+    ...opts(settings),
+    method: 'POST',
+    body: {name: data.name, url: data.url ?? '', description: data.description ?? '', platform: data.platform ?? 'github'},
+  });
+  return {id: res.id, name: res.name};
+}
+
+// ── Metas ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Metas atuais do produto, por chave de característica, já em 0–1.
+ * Devolve null quando o produto não tem meta (404 do serviço).
+ */
+export async function fetchGoals(
+    settings: MsgramSettings,
+    orgPk: number,
+    productPk: number,
+    log: Logger = noop,
+): Promise<Map<string, number> | null> {
+  const url = `${apiBase(settings)}/organizations/${orgPk}/products/${productPk}/current/goal/`;
+  log(`[${ts()}] GET ${url}`);
+  try {
+    const res = await request<GoalResp>(url, opts(settings));
+    const map = new Map<string, number>();
+    for (const [key, raw] of Object.entries(res?.data ?? {})) {
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        map.set(key, raw / 100);
+      }
+    }
+    log(`[${ts()}] → ${map.size} meta(s)`);
+    return map;
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) {
+      log(`[${ts()}] → Produto sem meta definida.`);
+      return null;
+    }
+    throw err;
+  }
 }
 
 // ── Score por repositório ─────────────────────────────────────────────────────
@@ -237,41 +296,77 @@ export async function fetchScoreForRepo(
     productPk: number,
     repoPk: number,
     repoName: string,
-    log: Logger = () => {
-    },
+    log: Logger = noop,
 ): Promise<ScoreData> {
-  if (!settings.serviceUrl || !settings.token) {
-    log(`[${ts()}] Sem configuração — usando score mockado.`);
-    return MOCK_SCORE;
-  }
-
-  const base = `${settings.serviceUrl}/api/v1/organizations/${orgPk}/products/${productPk}/repositories/${repoPk}`;
+  const base = `${apiBase(settings)}/organizations/${orgPk}/products/${productPk}/repositories/${repoPk}`;
   const tsqmiUrl = `${base}/latest-values/tsqmi/`;
   const charsUrl = `${base}/latest-values/characteristics/`;
+  const o = opts(settings);
 
   log(`[${ts()}] Buscando métricas para repositório "${repoName}" (id=${repoPk})`);
   log(`[${ts()}] GET ${tsqmiUrl}`);
   log(`[${ts()}] GET ${charsUrl}`);
 
-  const [tsqmi, chars] = await Promise.all([
-    get<TsqmiResp>(tsqmiUrl, settings.token),
-    get<{ results: CharItem[] }>(charsUrl, settings.token),
+  const [tsqmi, chars, goals] = await Promise.all([
+    request<TsqmiResp>(tsqmiUrl, o),
+    getAll<CharItem>(charsUrl, o),
+    fetchGoals(settings, orgPk, productPk, log),
   ]);
 
-  if (tsqmi.value === null || tsqmi.value === undefined) {
+  const hasGoal = goals !== null;
+
+  if (tsqmi?.value === null || tsqmi?.value === undefined) {
     log(`[${ts()}] Repositório "${repoName}" ainda não possui TSQMI calculado.`);
-    return {score: 0, characteristics: [], noData: true};
+    return {score: 0, characteristics: [], lastAnalysisAt: null, noData: true, hasGoal};
   }
 
-  log(`[${ts()}] → TSQMI: ${tsqmi.value.toFixed(4)}`);
-  chars.results.forEach(c => log(`[${ts()}] → ${c.name}: ${c.latest.value.toFixed(4)}`));
+  const characteristics: Characteristic[] = chars
+      .filter((c): c is CharItem & { latest: NonNullable<CharItem['latest']> } => !!c.latest)
+      .map((c) => ({
+        key: c.key,
+        name: c.name,
+        value: c.latest.value,
+        goal: goals?.get(c.key) ?? null,
+        measuredAt: c.latest.created_at,
+      }));
 
-  return {
-    score: tsqmi.value,
-    characteristics: chars.results.map((c) => ({
-      name: c.name,
-      value: c.latest.value,
-      goal: 0.7,
-    })),
-  };
+  const lastAnalysisAt = characteristics.reduce<string | null>((max, c) => {
+    if (!c.measuredAt) {
+      return max;
+    }
+    return !max || new Date(c.measuredAt) > new Date(max) ? c.measuredAt : max;
+  }, null);
+
+  log(`[${ts()}] → TSQMI: ${tsqmi.value.toFixed(4)}`);
+  characteristics.forEach((c) => log(`[${ts()}] → ${c.name}: ${c.value.toFixed(4)}${c.goal !== null ? ` (meta ${c.goal.toFixed(2)})` : ''}`));
+
+  return {score: tsqmi.value, characteristics, lastAnalysisAt, noData: false, hasGoal};
+}
+
+// ── Grafana ───────────────────────────────────────────────────────────────────
+
+export async function fetchGrafanaDashboards(settings: MsgramSettings, log: Logger = noop): Promise<GrafanaDashboard[]> {
+  const url = `${apiBase(settings)}/grafana/dashboards/`;
+  log(`[${ts()}] GET ${url}`);
+  const dashboards = await getAll<GrafanaDashboard>(url, opts(settings));
+  log(`[${ts()}] → ${dashboards.length} dashboard(s) encontrado(s).`);
+  return dashboards;
+}
+
+export async function fetchGrafanaDashboard(
+    settings: MsgramSettings,
+    uid: string,
+    productId: number,
+    repositoryId?: number,
+    log: Logger = noop,
+): Promise<GrafanaDashboardDetail> {
+  const params = new URLSearchParams({product_id: String(productId)});
+  if (repositoryId !== undefined) {
+    params.set('repository_id', String(repositoryId));
+  }
+  const url = `${apiBase(settings)}/grafana/dashboard/${encodeURIComponent(uid)}/?${params}`;
+  log(`[${ts()}] GET ${url}`);
+  const res = await request<GrafanaDashboardDetail>(url, opts(settings));
+  log(`[${ts()}] → Dashboard "${res.title}" — ${res.grafana_url}`);
+  return res;
 }

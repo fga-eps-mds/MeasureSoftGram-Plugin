@@ -13,9 +13,31 @@ export function escHtml(str: string): string {
         .replace(/>/g, '&gt;');
 }
 
+/** "há 2 dias", "há 3 horas", "há 5 minutos" ou "agora há pouco". */
+export function formatRelative(iso: string, now: Date = new Date()): string {
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return 'data desconhecida';
+    const diffSec = Math.max(0, Math.round((now.getTime() - then.getTime()) / 1000));
+    if (diffSec < 60) return 'agora há pouco';
+    const min = Math.floor(diffSec / 60);
+    if (min < 60) return `há ${min} minuto${min === 1 ? '' : 's'}`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `há ${h} hora${h === 1 ? '' : 's'}`;
+    const d = Math.floor(h / 24);
+    return `há ${d} dia${d === 1 ? '' : 's'}`;
+}
+
+/** Data e hora absolutas em pt-BR, para tooltips. */
+export function formatAbsolute(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'});
+}
+
 export type StatusColor = 'ok' | 'warn' | 'fail';
 
-export function getCharStatus(value: number, goal: number): StatusColor {
+export function getCharStatus(value: number, goal: number | null): StatusColor {
+    if (goal === null) return 'ok';
     if (value >= goal) return 'ok';
     if (value >= goal * 0.9) return 'warn';
     return 'fail';

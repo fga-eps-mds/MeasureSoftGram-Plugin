@@ -15,8 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-
-
           fetch-depth: 0
 
       - name: Setup Python
@@ -33,17 +31,12 @@ jobs:
       - name: Coletar métricas no SonarCloud
         run: python parser.py ${{ github.event.repository.name }} ${{ github.ref_name }}
 
-      - name: Envia métricas para repo de Doc
-        run: |
-          git config --global user.email "${{secrets.USER_EMAIL}}"
-          git config --global user.name "${{secrets.USER_NAME}}"
-          git clone --single-branch --branch main "https://x-access-token:${{secrets.METRICAS_PLUGIN}}@github.com/fga-eps-mds/MeasureSoftGram-Docs" doc
-          mkdir -p doc/Analytics/data
-          cp -R analytics-raw-data/*.json doc/Analytics/data
-          cd doc/
-          git add .
-          git commit -m "Adicionando métricas do repositório ${{ github.event.repository.name }} ${{ github.ref_name }}"
-          git push
+      - name: Guarda métricas como artefato do workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-raw-data-${{ github.ref_name }}
+          path: analytics-raw-data/*.json
+          retention-days: 90
 
       - name: Envia métricas como assets da release
         if: startsWith(github.ref, 'refs/tags')

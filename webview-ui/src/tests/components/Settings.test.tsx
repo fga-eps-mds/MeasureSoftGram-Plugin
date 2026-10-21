@@ -1,6 +1,6 @@
 import {fireEvent, render, screen} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import type {SettingsData} from '../../types';
+import type {SettingsForUi} from '../../types';
 
 const {mockGetState, mockSetState} = vi.hoisted(() => {
     const mockPostMessage = vi.fn();
@@ -13,178 +13,186 @@ const {mockGetState, mockSetState} = vi.hoisted(() => {
         setState: mockSetState,
     }));
 
-    return {mockPostMessage, mockGetState, mockSetState};
+    return {mockGetState, mockSetState};
 });
 
 const {SettingsView} = await import('../../components/SettingsView');
 
-const DEFAULT_VALUES: SettingsData = {
-    serviceUrl: 'https://msgram-api.synaptha.com/',
-    msgramServiceToken: '',
-    githubToken: '',
-    sonarProjectKey: '',
-    productName: 'measuresoftgram 2026',
-    workflowName: 'Build',
+const FULL: SettingsForUi = {
+    serviceUrl: 'https://api.example.com',
+    productName: 'My Product',
+    organizationName: 'Minha Org',
+    sonarProjectKey: 'my-project',
+    workflowName: 'CI',
+    requestTimeoutMs: 20000,
+    grafanaAllowedHosts: ['g.example.com'],
+    hasMsgramToken: true,
+    hasGithubToken: false,
 };
 
-const FULL_DATA: SettingsData = {
-    serviceUrl: 'https://api.example.com/',
-    msgramServiceToken: 'token-123',
-    githubToken: 'ghp_abc',
-    sonarProjectKey: 'my-project',
-    productName: 'My Product',
-    workflowName: 'CI',
-};
+function input(id: string): HTMLInputElement {
+    return document.getElementById(id) as HTMLInputElement;
+}
 
 describe('SettingsView', () => {
     const onSave = vi.fn();
+    const onClearSecret = vi.fn();
 
-    beforeEach(async () => {
+    beforeEach(() => {
         vi.clearAllMocks();
         mockGetState.mockReturnValue({});
-
-        const vscodeModule = await import('../../utils/vscode');
-        (vscodeModule as unknown as Record<string, unknown>)._api = undefined;
     });
 
     describe('valores padrão', () => {
         it('deve renderizar o container com id "view-settings"', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
             expect(document.getElementById('view-settings')).toBeInTheDocument();
         });
 
-        it('deve preencher serviceUrl com o valor padrão quando initialData é omitido', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('https://msgram-api.synaptha.com/')).toBeInTheDocument();
+        it('serviceUrl padrão é a infraestrutura oficial', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-serviceurl').value).toBe('https://msgram.lappis.rocks');
         });
 
-        it('deve preencher productName com o valor padrão quando initialData é omitido', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('measuresoftgram 2026')).toBeInTheDocument();
+        it('productName começa vazio e workflowName em "Build"', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-product').value).toBe('');
+            expect(input('inp-workflowname').value).toBe('Build');
         });
 
-        it('deve preencher workflowName com o valor padrão quando initialData é omitido', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('Build')).toBeInTheDocument();
+        it('campos de token são type="password"', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-msgram-token')).toHaveAttribute('type', 'password');
+            expect(input('inp-github-token')).toHaveAttribute('type', 'password');
         });
 
-        it('deve renderizar campos de token como type="password"', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            expect(document.getElementById('inp-msgram-token')).toHaveAttribute('type', 'password');
-            expect(document.getElementById('inp-github-token')).toHaveAttribute('type', 'password');
+        it('nunca mostra a URL antiga fora do ar', () => {
+            const {container} = render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(container.innerHTML).not.toContain('synaptha');
         });
     });
 
     describe('initialData', () => {
-        it('deve preencher os campos com os valores de initialData', () => {
-            render(<SettingsView initialData={FULL_DATA} onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('https://api.example.com/')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('token-123')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('ghp_abc')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('my-project')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('My Product')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('CI')).toBeInTheDocument();
+        it('preenche os campos não sensíveis', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-serviceurl').value).toBe('https://api.example.com');
+            expect(input('inp-product').value).toBe('My Product');
+            expect(input('inp-org').value).toBe('Minha Org');
+            expect(input('inp-sonar-key').value).toBe('my-project');
+            expect(input('inp-workflowname').value).toBe('CI');
         });
 
-        it('deve dar preferência ao draft do estado sobre initialData', () => {
-            mockGetState.mockReturnValue({settingsDraft: {serviceUrl: 'https://draft.com/'}});
-            render(<SettingsView initialData={FULL_DATA} onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('https://draft.com/')).toBeInTheDocument();
+        it('token salvo aparece como "salvo ✓" com campo vazio, sem o valor', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-msgram-token').value).toBe('');
+            expect(screen.getByTestId('msgram-token-status')).toHaveTextContent(/salvo/i);
+            expect(input('inp-msgram-token').placeholder).toMatch(/salvo/i);
+        });
+
+        it('token não salvo mostra "não configurado"', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(screen.getByTestId('github-token-status')).toHaveTextContent(/não configurado/i);
+        });
+
+        it('botão "remover" só aparece para token salvo e envia onClearSecret', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(screen.queryByTestId('clear-github-token')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByTestId('clear-msgram-token'));
+            expect(onClearSecret).toHaveBeenCalledWith('msgram.token');
+        });
+
+        it('dá preferência ao rascunho do estado sobre initialData', () => {
+            mockGetState.mockReturnValue({settingsDraft: {serviceUrl: 'https://draft.com'}});
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(input('inp-serviceurl').value).toBe('https://draft.com');
         });
     });
 
-    describe('edição de campos', () => {
+    describe('edição e rascunho', () => {
         it.each([
-            ['inp-serviceurl', 'https://nova-url.com/'],
+            ['inp-serviceurl', 'https://nova-url.com'],
             ['inp-msgram-token', 'novo-token'],
             ['inp-github-token', 'ghp_novo'],
             ['inp-sonar-key', 'sonar-key'],
             ['inp-product', 'Novo Produto'],
+            ['inp-org', 'Outra Org'],
             ['inp-workflowname', 'Deploy'],
-        ])('deve atualizar o campo "%s" ao digitar', (id, value) => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            const input = document.getElementById(id) as HTMLInputElement;
-            fireEvent.change(input, {target: {value}});
-            expect(input.value).toBe(value);
+        ])('atualiza o campo "%s" ao digitar', (id, value) => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.change(input(id), {target: {value}});
+            expect(input(id).value).toBe(value);
         });
 
-        it('deve chamar setState ao alterar qualquer campo', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.change(document.getElementById('inp-serviceurl')!, {
-                target: {value: 'https://changed.com/'},
-            });
-            expect(mockSetState).toHaveBeenCalled();
+        it('persiste o rascunho dos campos não sensíveis ao digitar', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.change(input('inp-product'), {target: {value: 'Produto Teste'}});
+            const call = mockSetState.mock.calls[0][0] as {settingsDraft: Record<string, unknown>};
+            expect(call.settingsDraft.productName).toBe('Produto Teste');
         });
 
-        it('deve persistir o draft com os valores atuais ao alterar um campo', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.change(document.getElementById('inp-product')!, {
-                target: {value: 'Produto Teste'},
-            });
-            const call = mockSetState.mock.calls[0][0] as Record<string, unknown>;
-            expect((call.settingsDraft as SettingsData).productName).toBe('Produto Teste');
+        it('nunca grava tokens no rascunho', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.change(input('inp-msgram-token'), {target: {value: 'segredo-123'}});
+            fireEvent.change(input('inp-github-token'), {target: {value: 'ghp_segredo'}});
+            fireEvent.change(input('inp-product'), {target: {value: 'P'}});
+            const dumped = JSON.stringify(mockSetState.mock.calls);
+            expect(dumped).not.toContain('segredo-123');
+            expect(dumped).not.toContain('ghp_segredo');
         });
     });
 
-    describe('handleSave', () => {
-        it('deve chamar onSave ao clicar no botão salvar', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.click(screen.getByRole('button'));
+    describe('salvar', () => {
+        it('chama onSave com os campos não sensíveis e sem tokens quando não digitados', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.click(screen.getByRole('button', {name: /salvar/i}));
             expect(onSave).toHaveBeenCalledTimes(1);
-        });
-
-        it('deve chamar onSave com os valores padrão quando nenhum campo foi alterado', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.click(screen.getByRole('button'));
-            expect(onSave).toHaveBeenCalledWith(DEFAULT_VALUES);
-        });
-
-        it('deve chamar onSave com os dados atualizados após edição', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.change(document.getElementById('inp-product')!, {
-                target: {value: 'Produto Novo'},
+            const payload = onSave.mock.calls[0][0];
+            expect(payload).toMatchObject({
+                serviceUrl: 'https://api.example.com',
+                productName: 'My Product',
+                organizationName: 'Minha Org',
+                sonarProjectKey: 'my-project',
+                workflowName: 'CI',
+                requestTimeoutMs: 20000,
+                grafanaAllowedHosts: ['g.example.com'],
             });
-            fireEvent.click(screen.getByRole('button'));
-            expect(onSave).toHaveBeenCalledWith(expect.objectContaining({productName: 'Produto Novo'}));
+            expect(payload.msgramServiceToken).toBeUndefined();
+            expect(payload.githubToken).toBeUndefined();
         });
 
-        it('deve chamar onSave com os valores de initialData', () => {
-            render(<SettingsView initialData={FULL_DATA} onSave={onSave} savedFeedback={false}/>);
-            fireEvent.click(screen.getByRole('button'));
-            expect(onSave).toHaveBeenCalledWith(FULL_DATA);
+        it('inclui o token só quando foi digitado', () => {
+            render(<SettingsView initialData={FULL} onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.change(input('inp-github-token'), {target: {value: 'ghp_novo'}});
+            fireEvent.click(screen.getByRole('button', {name: /salvar/i}));
+            const payload = onSave.mock.calls[0][0];
+            expect(payload.githubToken).toBe('ghp_novo');
+            expect(payload.msgramServiceToken).toBeUndefined();
         });
 
-        it('deve chamar setState para persistir o draft ao salvar', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            fireEvent.click(screen.getByRole('button'));
-            expect(mockSetState).toHaveBeenCalled();
+        it('limpa os campos de token depois de salvar', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            fireEvent.change(input('inp-msgram-token'), {target: {value: 'tok'}});
+            fireEvent.click(screen.getByRole('button', {name: /salvar/i}));
+            expect(input('inp-msgram-token').value).toBe('');
         });
     });
 
-    describe('savedFeedback', () => {
-        it('não deve exibir o feedback quando savedFeedback é false', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={false}/>);
+    describe('feedback', () => {
+        it('não exibe o feedback quando savedFeedback é false', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
             expect(document.getElementById('save-fb')).not.toBeInTheDocument();
         });
 
-        it('deve exibir o feedback "Conexão validada" quando savedFeedback é true', () => {
-            render(<SettingsView onSave={onSave} savedFeedback={true}/>);
+        it('exibe "Configurações salvas" quando savedFeedback é true', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={true}/>);
             expect(document.getElementById('save-fb')).toBeInTheDocument();
-            expect(screen.getByText(/Conexão validada/)).toBeInTheDocument();
-        });
-    });
-
-    describe('sincronização via useEffect', () => {
-        it('deve sincronizar os campos quando initialData muda de vazio para preenchido', () => {
-            const {rerender} = render(<SettingsView onSave={onSave} savedFeedback={false}/>);
-            rerender(<SettingsView initialData={FULL_DATA} onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('https://api.example.com/')).toBeInTheDocument();
+            expect(screen.getByText(/salvas/i)).toBeInTheDocument();
         });
 
-        it('não deve re-sincronizar quando initialData continua vazio', () => {
-            const {rerender} = render(<SettingsView initialData={{}} onSave={onSave} savedFeedback={false}/>);
-            rerender(<SettingsView initialData={{}} onSave={onSave} savedFeedback={false}/>);
-            expect(screen.getByDisplayValue('https://msgram-api.synaptha.com/')).toBeInTheDocument();
+        it('explica onde cada coisa é guardada', () => {
+            render(<SettingsView onSave={onSave} onClearSecret={onClearSecret} savedFeedback={false}/>);
+            expect(screen.getByText(/Secret Storage/)).toBeInTheDocument();
+            expect(screen.getByText(/settings\.json/)).toBeInTheDocument();
         });
     });
 });

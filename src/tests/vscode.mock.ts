@@ -21,6 +21,21 @@ const vscode = {
         constructor(public id: string) {}
     },
 
+    ThemeIcon: class ThemeIcon {
+        constructor(public id: string, public color?: any) {}
+    },
+
+    MarkdownString: class MarkdownString {
+        constructor(public value = '') {}
+    },
+
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+
+    TreeItem: class TreeItem {
+        description?: string; tooltip?: any; iconPath?: any; command?: any; contextValue?: string;
+        constructor(public label: string, public collapsibleState = 0) {}
+    },
+
     window: {
         createStatusBarItem: (_alignment: any, _priority: number) => ({
             command: undefined as any,
@@ -45,10 +60,42 @@ const vscode = {
         },
         showErrorMessage: () => Promise.resolve(undefined),
         showInformationMessage: () => Promise.resolve(undefined),
+        showWarningMessage: () => Promise.resolve(undefined),
+        /** Os testes trocam por uma função que devolve o item escolhido. */
+        showQuickPick: (items: any[]) => Promise.resolve(items[0]),
+        registerTreeDataProvider: () => ({ dispose() {} }),
+        createTreeView: () => ({ dispose() {}, reveal() {} }),
     },
+
+    ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
 
     workspace: {
         workspaceFolders: undefined as any,
+        /** Store configurável pelos testes: vscode.workspace._config[section][key] */
+        _config: {} as Record<string, Record<string, any>>,
+        getConfiguration(section = '') {
+            const store = (vscode.workspace._config[section] ??= {});
+            return {
+                get<T>(key: string, def?: T): T | undefined {
+                    return (store[key] as T) ?? def;
+                },
+                update(key: string, value: any, _target?: any) {
+                    store[key] = value;
+                    return Promise.resolve();
+                },
+            };
+        },
+    },
+
+    commands: {
+        _executed: [] as { command: string; args: any[] }[],
+        executeCommand(command: string, ...args: any[]) {
+            vscode.commands._executed.push({ command, args });
+            return Promise.resolve();
+        },
+        registerCommand(_id: string, _fn: (...a: any[]) => any) {
+            return { dispose() {} };
+        },
     },
 
     EventEmitter: class EventEmitter {

@@ -18,4 +18,23 @@ describe('DEFAULT_WORKFLOW_YAML', () => {
         expect(DEFAULT_WORKFLOW_YAML).toBeTruthy();
         expect(typeof DEFAULT_WORKFLOW_YAML).toBe('string');
     });
+
+    it('dispara por workflow_dispatch (execução local) além de workflow_run', () => {
+        expect(DEFAULT_WORKFLOW_YAML).toMatch(/^\s*workflow_dispatch:/m);
+        expect(DEFAULT_WORKFLOW_YAML).toContain('workflow_run:');
+    });
+
+    it('só roda após build com sucesso ou por dispatch', () => {
+        expect(DEFAULT_WORKFLOW_YAML).toContain("github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'");
+    });
+
+    it('usa checkout@v4 e a Action fixada em 2.1.5', () => {
+        expect(DEFAULT_WORKFLOW_YAML).toContain('actions/checkout@v4');
+        expect(DEFAULT_WORKFLOW_YAML).toContain('fga-eps-mds/MeasureSoftGram-Action@2.1.5');
+    });
+
+    it('tokens são referências a secrets, nunca valores', () => {
+        expect(DEFAULT_WORKFLOW_YAML).toContain('githubToken: ${{ secrets.GITHUB_TOKEN }}');
+        expect(DEFAULT_WORKFLOW_YAML).toContain('msgramServiceToken: ${{ secrets.MSGRAM_TOKEN }}');
+    });
 });

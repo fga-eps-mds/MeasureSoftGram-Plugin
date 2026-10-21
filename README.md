@@ -6,11 +6,11 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--v3-orange.svg)](https://www.gnu.org/licenses/agpl-3.0)
 &nbsp;
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue.svg)](https://marketplace.visualstudio.com/vscode)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MeasureSoftGram.measuresoftgram)
 &nbsp;
-[![Site Oficial](https://img.shields.io/badge/Site-MeasureSoftGram-green.svg)](https://github.com/fga-eps-mds/MeasureSoftGram-Service)
+[![Site Oficial](https://img.shields.io/badge/Site-MeasureSoftGram-green.svg)](https://msgram.lappis.rocks/)
 
-[Instalar Extensão](#instalação) · [Site Oficial](https://msgram.lappis.rocks/) · [Reportar Bug](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin/issues) · [Documentação](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin)
+[Instalar Extensão](#instalação) · [Site Oficial](https://fga-eps-mds.github.io/MeasureSoftGram-Docs/) · [Reportar Bug](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin/issues) · [Documentação](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin)
 
 </div>
 
@@ -18,7 +18,7 @@
 
 ## Visão geral
 
-O painel exibe o indicador multidimensional da qualidade de software **TSQMI**, as três características de qualidade com valores e metas definidas pela equipe, e emite alertas de regressão antes de cada commit.
+O painel exibe o indicador multidimensional da qualidade de software **TSQMI**, as características de qualidade com valores e metas definidas pela equipe no MeasureSoftGram, a data da última análise, e avisa quando alguma característica fica abaixo da meta.
 
 ![Painel principal do plugin mostrando score 0.86 e características Reliability, Maintainability e Functional Suitability](https://raw.githubusercontent.com/fga-eps-mds/MeasureSoftGram-Plugin/refs/heads/develop/assets/painel-principal.png)
 ---
@@ -26,20 +26,35 @@ O painel exibe o indicador multidimensional da qualidade de software **TSQMI**, 
 ## O que o plugin faz
 
 - **Indicador Multidimensional da Qualidade Geral/Total do Software (TSQMI)** - um único número de 0 a 1 que resume a saúde do projeto, calculado por um metamodelo algébrico original (produto de Hadamard + norma de Frobenius).
-- **Três dimensões de qualidade** - Confiabilidade, Manutenibilidade e Adequação Funcional, cada uma com valor atual e meta configurável.
+- **Características de qualidade** - Confiabilidade, Manutenibilidade e Adequação Funcional, cada uma com valor atual e a meta definida pela equipe no serviço.
 - **Dashboards Grafana embutidos** - quatro painéis analíticos carregados diretamente dentro do VS Code, sem abrir o browser.
-- **Visibilidade de log** - todas as chamadas à API ficam visíveis no painel Output do VS Code para fácil diagnóstico.
-- **MeasureSoftGram Action** - executa a action que publica a qualidade de software direto no MeasureSoftGram.
+- **Visibilidade de log** - todas as chamadas à API ficam no canal "MeasureSoftGram API" do painel Output do VS Code, e a saída da execução local aparece na aba **Saída** do painel.
+- **MeasureSoftGram Action** - gera o `.github/workflows/msgram.yml` do seu projeto a partir das Settings e, se você tiver Docker, executa a Action localmente para testar.
+
+### Execução local da Action (requer Docker)
+
+A aba **Action** edita e salva o `msgram.yml`. A execução oficial continua sendo no GitHub Actions, após o workflow de build. O botão **Executar** roda o mesmo workflow na sua máquina com o [act](https://github.com/nektos/act) dentro de um contêiner:
+
+- **Pré-requisito:** [Docker](https://docs.docker.com/get-docker/) instalado e em execução. Sem ele o botão avisa e não roda nada.
+- Os tokens configurados em Settings são passados ao contêiner só pelo ambiente do processo e aparecem mascarados na saída.
+- A saída chega em tempo real na aba **Saída**; **Parar** interrompe e derruba o contêiner.
+- A execução local também publica no MeasureSoftGram, então precisa de internet e dos dois tokens.
 
 
 ---
 
 ## Instalação
 
-1. Instale a extensão no VS Code e crie sua conta em no [MeasureSoftGram](https://github.com/fga-eps-mds/MeasureSoftGram-Service)
-2. Clique no ícone **MeasureSoftGram** na Activity Bar lateral
-3. Ou acesse via paleta de comandos: `Ctrl+Shift+P` → `MeasureSoftGram: Abrir Painel`
-4. Faça login com sua conta - pronto.
+1. Instale a extensão pelo [Marketplace](https://marketplace.visualstudio.com/items?itemName=MeasureSoftGram.measuresoftgram).
+2. Crie sua conta no [MeasureSoftGram](https://msgram.lappis.rocks/) e gere um **token de API** no seu perfil. Cadastre (ou peça acesso a) o **produto** que você quer acompanhar.
+3. Clique no ícone **MeasureSoftGram** na Activity Bar, ou use `Ctrl+Shift+P` → `MeasureSoftGram: Abrir MeasureSoftGram (Panel)`.
+4. Na aba **Config**, informe:
+   - **MSGRAM Service URL**: já vem preenchida com `https://msgram.lappis.rocks`. Só mude se usar outra instância.
+   - **MSGRAM Service Token**: o token gerado no passo 2. Ele fica guardado no Secret Storage do VS Code.
+   - **Product Name**: o nome exato do produto cadastrado no serviço.
+5. Clique em **Salvar**. O painel carrega os dados reais do produto.
+
+> **Sem token a extensão não mostra nenhum dado.** Em vez de um score, você vê a tela "Extensão não está configurada" com o que falta preencher. A URL e o nome do produto também podem ser editados em `settings.json` (`msgram.serviceUrl`, `msgram.productName`).
 
 ---
 
@@ -99,6 +114,26 @@ Executa a action que publica a qualidade de software direto no MeasureSoftGram, 
 
 ---
 
+## Desenvolvimento e release
+
+```bash
+npm ci && (cd webview-ui && npm ci)   # dependências fixadas pelos lockfiles
+npm run lint && npm run lint:webview  # zero erros nos dois pacotes
+npm run test:unit                     # extensão, com o 'vscode' simulado
+npm run test:integration              # abre um VS Code real e ativa a extensão
+npm run build:webview && npm run compile
+npm run package                       # gera measuresoftgram-<versão>.vsix
+```
+
+O `.vsix` sai com a interface compilada e sem relatórios de cobertura. A publicação é automática, pelo workflow **Release & Marketplace** com o [Release Please](https://github.com/googleapis/release-please):
+
+1. Commits convencionais (`feat:`, `fix:`, ...) chegam à `main`. O Release Please abre (ou atualiza) um PR de release com a nova versão e o `CHANGELOG.md`.
+2. Ao mesclar esse PR, o workflow cria a tag e a release no GitHub, roda lint e testes, empacota, confere o conteúdo do `.vsix`, anexa à release e publica no Marketplace (se o secret `VSCE_PAT` existir).
+
+Os secrets que o CI precisa estão descritos em [docs/SECRETS.md](docs/SECRETS.md).
+
+---
+
 ## Sobre o modelo de qualidade
 
 Trata-se de um modelo hierárquico, multinível, multivariado e multidimensional. O MeasureSoftGram usa um metamodelo algébrico (original), que representa a qualidade de produto de software no espaço R_N. Utiliza a combinação do [produto de Hadamard](https://en.wikipedia.org/wiki/Hadamard_product_(matrices)) com [norma de Frobenius](https://en.wikipedia.org/wiki/Matrix_norm#Frobenius_norm), para agregar métricas e medidas em indicadores multidimensionais de qualidade. O resultado é um indicador multidimensional, contínuo, rastreável ao longo do tempo e que expressa a percepção quantitativa da qualidade de software.
@@ -107,6 +142,6 @@ Trata-se de um modelo hierárquico, multinível, multivariado e multidimensional
 
 <div align="center">
 
-[Site Oficial](https://msgram.lappis.rocks/) · [Reportar Bug](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin/issues) · [Docs](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin) · Licença AGPL v3
+[Site Oficial](https://fga-eps-mds.github.io/MeasureSoftGram-Docs/) · [Reportar Bug](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin/issues) · [Docs](https://github.com/fga-eps-mds/MeasureSoftGram-Plugin) · Licença AGPL v3
 
 </div>

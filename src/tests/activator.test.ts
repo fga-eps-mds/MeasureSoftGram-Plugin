@@ -6,6 +6,7 @@ suite('activator — activate()', () => {
     const registeredCommands: Record<string, () => void> = {};
     const registeredProviders: Record<string, unknown> = {};
     let panelRenderCalled = false;
+    let panelReceivedStatusBar: unknown = null;
     let statusBarDisposeCalled = false;
     let sidebarReceivedStatusBar: unknown = null;
 
@@ -32,8 +33,9 @@ suite('activator — activate()', () => {
             },
         };
         const FakePanel = {
-            render: () => {
+            render: (_ctx: unknown, sb: unknown) => {
                 panelRenderCalled = true;
+                panelReceivedStatusBar = sb;
             }
         };
 
@@ -75,7 +77,16 @@ suite('activator — activate()', () => {
         assert.ok(sidebarReceivedStatusBar !== null);
     });
 
-    test('adiciona 3 itens às subscriptions', () => {
-        assert.strictEqual(subscriptions.length, 3);
+    test('registra os comandos msgram.openSettings e msgram.clearTokens', () => {
+        assert.ok('msgram.openSettings' in registeredCommands);
+        assert.ok('msgram.clearTokens' in registeredCommands);
+    });
+
+    test('adiciona 6 itens às subscriptions (status bar, sidebar e 4 comandos)', () => {
+        assert.strictEqual(subscriptions.length, 6);
+    });
+
+    test('passa a StatusBar para Panel.render', () => {
+        assert.ok(panelReceivedStatusBar !== null);
     });
 });

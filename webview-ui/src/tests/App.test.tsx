@@ -18,7 +18,15 @@ const {mockPostMessage, mockGetState, mockSetState, mockGetMissingSettings} = vi
 
 vi.mock('../components/Sidebar', () => ({
     Sidebar: (props: Record<string, unknown>) => (
-        <div data-testid="sidebar" data-tab={props.activeTab as string}/>
+        <div
+            data-testid="sidebar"
+            data-tab={props.activeTab as string}
+            data-orgs={(props.organizations as unknown[] | undefined)?.length ?? 0}
+            data-selected-org={String(props.selectedOrgPk ?? '')}
+            data-selected-repo={String(props.selectedRepoPk ?? '')}
+        >
+            <button data-testid="select-org" onClick={() => (props.onSelectOrg as (pk: number) => void)?.(11)}>org</button>
+        </div>
     ),
 }));
 
@@ -35,7 +43,20 @@ vi.mock('../components/Tabs', () => ({
 }));
 
 vi.mock('../components/DashboardView', () => ({
-    DashboardView: () => <div data-testid="dashboard-view"/>,
+    DashboardView: (props: { notifText: string; notifType: string; onRetry?: () => void }) => (
+        <div data-testid="dashboard-view" data-notif={props.notifText} data-notif-type={props.notifType}>
+            {props.onRetry && <button data-testid="retry" onClick={props.onRetry}>retry</button>}
+        </div>
+    ),
+}));
+
+vi.mock('../components/NotConfiguredView', () => ({
+    NotConfiguredView: (props: { missing: string[]; onOpenSettings: () => void; onOpenVscodeSettings: () => void }) => (
+        <div data-testid="not-configured" data-missing={props.missing.join(',')}>
+            <button data-testid="nc-open-settings" onClick={props.onOpenSettings}>settings</button>
+            <button data-testid="nc-open-json" onClick={props.onOpenVscodeSettings}>json</button>
+        </div>
+    ),
 }));
 
 vi.mock('../components/action/OutputView.tsx', () => ({
@@ -62,16 +83,19 @@ vi.mock('../components/SettingsView', () => ({
 }));
 
 vi.mock('../components/action/ActionView.tsx', () => ({
-    ActionView: ({onSave, onRun, savedFeedback, running, alert}: {
+    ActionView: ({onSave, onRun, onStop, savedFeedback, running, alert, blocked}: {
         onSave: () => void;
         onRun: () => void;
+        onStop: () => void;
         savedFeedback: boolean;
         running: boolean;
         alert: string | null;
+        blocked: {reason: string} | null;
     }) => (
-        <div data-testid="action-view">
+        <div data-testid="action-view" data-blocked={blocked?.reason ?? ''}>
             <button data-testid="action-save" onClick={onSave}>save</button>
             <button data-testid="action-run" onClick={onRun}>run</button>
+            <button data-testid="action-stop" onClick={onStop}>stop</button>
             {savedFeedback && <span data-testid="action-feedback"/>}
             {running && <span data-testid="action-running"/>}
             {alert && <span data-testid="action-alert">{alert}</span>}
@@ -89,7 +113,7 @@ vi.mock('../utils/defaultWorkflow', () => ({
 }));
 
 vi.mock('../utils/workflowYaml', () => ({
-    applySettingsToYaml: (_yaml: string, _settings: unknown) => 'yaml-merged',
+    applySettingsToYaml: () => 'yaml-merged',
 }));
 
 vi.mock('../utils/vscode', () => ({
@@ -177,6 +201,14 @@ describe('App', () => {
             expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
         });
 
+        it('repos_loaded com selectedRepoPk seleciona o repositório detectado', () => {
+            render(<App/>);
+            act(() => {
+                sendMessage({command: 'repos_loaded', repos: [{id: 1, name: 'a'}, {id: 2, name: 'b'}], selectedRepoPk: 2, detected: true});
+            });
+            expect(screen.getByTestId('sidebar').getAttribute('data-selected-repo')).toBe('2');
+        });
+
         it('deve ativar scoreLoading ao receber score_loading', () => {
             render(<App/>);
             act(() => sendMessage({command: 'score_loading'}));
@@ -210,13 +242,13 @@ describe('App', () => {
             expect(screen.getByTestId('output-view').getAttribute('data-lines')).toBe('2');
         });
 
-        it('deve voltar para dashboard após analysis_done com sucesso', async () => {
+        it('deve permanecer na aba output após analysis_done com sucesso', async () => {
             vi.useFakeTimers();
             render(<App/>);
             act(() => sendMessage({command: 'analysis_started'}));
             act(() => sendMessage({command: 'analysis_done', success: true, exitCode: 0}));
             await act(async () => vi.advanceTimersByTime(600));
-            expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
+            expect(screen.getByTestId('output-view')).toBeInTheDocument();
             vi.useRealTimers();
         });
 
@@ -277,6 +309,103 @@ describe('App', () => {
             const {unmount} = render(<App/>);
             unmount();
             expect(removeSpy).toHaveBeenCalledWith('message', expect.any(Function));
+        });
+    });
+
+    describe('estado não configurado (US1)', () => {
+        it('deve trocar o dashboard pela NotConfiguredView ao receber not_configured', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'not_configured', missing: ['token']}));
+            expect(screen.getByTestId('not-configured')).toBeInTheDocument();
+            expect(screen.getByTestId('not-configured').getAttribute('data-missing')).toBe('token');
+            expect(screen.queryByTestId('dashboard-view')).not.toBeInTheDocument();
+        });
+
+        it('"Abrir Settings" na NotConfiguredView leva para a aba settings', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'not_configured', missing: ['token']}));
+            fireEvent.click(screen.getByTestId('nc-open-settings'));
+            expect(screen.getByTestId('settings-view')).toBeInTheDocument();
+        });
+
+        it('"settings.json" envia open_vscode_settings', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'not_configured', missing: ['token']}));
+            fireEvent.click(screen.getByTestId('nc-open-json'));
+            expect(mockPostMessage).toHaveBeenCalledWith({command: 'open_vscode_settings'});
+        });
+
+        it('volta ao dashboard quando score_loading chega depois de not_configured', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'not_configured', missing: ['token']}));
+            act(() => sendMessage({command: 'score_loading'}));
+            expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
+        });
+    });
+
+    describe('organizações, erros e retry (US1)', () => {
+        it('passa as organizações e a selecionada para a Sidebar ao receber orgs_loaded', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'orgs_loaded', organizations: [{id: 10, name: 'a'}, {id: 11, name: 'b'}], selectedOrgPk: 10}));
+            const sb = screen.getByTestId('sidebar');
+            expect(sb.getAttribute('data-orgs')).toBe('2');
+            expect(sb.getAttribute('data-selected-org')).toBe('10');
+        });
+
+        it('envia select_org ao escolher outra organização', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'orgs_loaded', organizations: [{id: 10, name: 'a'}, {id: 11, name: 'b'}], selectedOrgPk: 10}));
+            fireEvent.click(screen.getByTestId('select-org'));
+            expect(mockPostMessage).toHaveBeenCalledWith({command: 'select_org', orgPk: 11});
+        });
+
+        it('score_error com kind timeout mostra a mensagem como erro', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'score_error', message: 'O serviço não respondeu em 15 s.', kind: 'timeout'}));
+            const dv = screen.getByTestId('dashboard-view');
+            expect(dv.getAttribute('data-notif')).toBe('O serviço não respondeu em 15 s.');
+            expect(dv.getAttribute('data-notif-type')).toBe('error');
+        });
+
+        it('"Tentar de novo" envia retry', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'score_error', message: 'x', kind: 'unavailable'}));
+            fireEvent.click(screen.getByTestId('retry'));
+            expect(mockPostMessage).toHaveBeenCalledWith({command: 'retry'});
+        });
+    });
+
+    describe('execução local (US5)', () => {
+        it('analysis_blocked chega na ActionView e desliga running', () => {
+            render(<App/>);
+            fireEvent.click(screen.getByTestId('tab-action'));
+            act(() => sendMessage({command: 'analysis_started'}));
+            fireEvent.click(screen.getByTestId('tab-action'));
+            act(() => sendMessage({command: 'analysis_blocked', reason: 'docker_missing'}));
+            expect(screen.getByTestId('action-view').getAttribute('data-blocked')).toBe('docker_missing');
+            expect(screen.queryByTestId('action-running')).not.toBeInTheDocument();
+        });
+
+        it('um novo run_action limpa o bloqueio anterior', () => {
+            render(<App/>);
+            fireEvent.click(screen.getByTestId('tab-action'));
+            act(() => sendMessage({command: 'analysis_blocked', reason: 'docker_stopped'}));
+            fireEvent.click(screen.getByTestId('action-run'));
+            expect(screen.getByTestId('action-view').getAttribute('data-blocked')).toBe('');
+        });
+
+        it('"Parar" envia stop_analysis', () => {
+            render(<App/>);
+            fireEvent.click(screen.getByTestId('tab-action'));
+            fireEvent.click(screen.getByTestId('action-stop'));
+            expect(mockPostMessage).toHaveBeenCalledWith({command: 'stop_analysis'});
+        });
+
+        it('analysis_stopped registra "interrompida" na saída', () => {
+            render(<App/>);
+            act(() => sendMessage({command: 'analysis_started'}));
+            act(() => sendMessage({command: 'analysis_stopped'}));
+            expect(screen.getByTestId('output-view').getAttribute('data-lines')).toBe('1');
         });
     });
 

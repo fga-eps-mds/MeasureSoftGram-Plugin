@@ -1,35 +1,94 @@
 name: Rodar Testes
+
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
-      - name: Instalar dependências
-        run: npm run install:all
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Instalar dependências da extensão
+        run: npm ci
+
+      - name: Instalar dependências da interface
+        run: npm ci
+        working-directory: webview-ui
+
+      - name: Lint da extensão
+        run: npm run lint
+
+      - name: Lint da interface
+        run: npm run lint:webview
+
       - name: Compilar extensão
         run: npm run compile
-      - name: Rodar testes da extensão com cobertura
+
+      - name: Build da interface
+        run: npm run build:webview
+
+      - name: Testes da extensão com cobertura
         run: npm run test:coverage
-      - name: Rodar testes da webview com cobertura
-        run: cd webview-ui && npm run test:coverage
-      - name: Scanner do SonarCloud
-        uses: SonarSource/sonarqube-scan-action@v6
+
+      - name: Testes da interface com cobertura
+        run: npm run test:coverage
+        working-directory: webview-ui
+
+      - name: Teste de integração em VS Code real
+        run: xvfb-run -a npm run test:integration
+
+      - name: Gerar metadados do PR / Execução
+        run: |
+          mkdir -p pr_metadata
+          cat << 'EOF' > pr_metadata/metadata.json
+          {
+            "event_name": "${{ github.event_name }}",
+            "pr_number": "${{ github.event.pull_request.number }}",
+            "head_ref": "${{ github.event.pull_request.head.ref || github.ref_name }}",
+            "head_repo": "${{ github.event.pull_request.head.repo.full_name || github.repository }}",
+            "head_sha": "${{ github.event.pull_request.head.sha || github.sha }}",
+            "base_ref": "${{ github.event.pull_request.base.ref || github.ref_name }}"
+          }
+          EOF
+
+      - name: Upload de artefatos de cobertura e metadados
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: test-coverage-artifacts
+          path: |
+            coverage/lcov.info
+            webview-ui/coverage/lcov.info
+            pr_metadata/metadata.json
+          retention-days: 1
+
+      - name: Scanner do SonarCloud (Fallback para contexto com secrets)
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
-            -Dsonar.projectName=${{ github.event.repository.name }}
+
+      - name: Notificação de SonarCloud desacoplado
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN não disponível neste contexto (PR de fork). Testes concluídos com sucesso e artefatos salvos para a esteira do SonarCloud."
